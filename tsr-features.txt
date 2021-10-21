@@ -1,0 +1,23 @@
+# V0.1
+-Client side js -> any message starting with '?cjs' will be executed
+-[UNTESTED]Update button Foo -> TSR-Foo
+ (Requires reset button(Settings -> TSR Client -> Reset update url) to be pressed)
+
+-Settings Menu:
+    -Name field
+    -UUID field
+    -Enable client side js box
+    -Reset update url button
+
+-Pause Menu:
+    -Reconnect button
+
+
+# TODO
+-More translations
+-README.md
+-Make TextPref input field bigger
+-Update discord rich presence
+
+# Ideas for next version(s)
+-Make all blocks visible

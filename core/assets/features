@@ -1,0 +1,45 @@
+/**
+ * This is a stupid markup 'language' I made, don't use this please
+ * This area is a block comment
+ * Line comments start with //
+ * Headings start with #
+ * List items have a * for each line
+ * \n does linebreak
+*/
+# This list is way out of date and is a work in progress, it is recommended to read through the changelog instead.
+
+# Default Keybinds
+ * r - reset camera
+ * y - place waypoint (only works while recording waypoints)
+ * \ - hold to place block payload precisely
+ * z - navigate to camera (experimental)
+ * alt WASD - free camera movement, r to reset
+ * alt click - open tile actions menu (contains logs)
+ * hold shift to disable conveyor/conduit auto bridge
+ * o - make all units invisible (including yourself)
+ * shift o - toggle unit invisibility
+ * ; - enable "build path", automatically moves to anything you place, rebuilds broken structures and assists teammates
+ * ctrl f - find block
+
+# Top Navigation Menu
+ * Start recording waypoints - begin a new path, press y to add a waypoint
+ * Also records item transfers and payload actions
+ * Finish recording waypoints - finalizes the path
+ * Follow recorded path - replay the recorded path
+ * Stop following path - stop following path (note: assist and auto navigation are also considered paths)
+
+# Settings
+ * Display lighting
+ * Send reactor warnings
+ * Play a sound on reactor warning (sound can only play after a 10s break in reactor building)
+ * Discord rich presence toggle
+ * Weather opacity slider
+ * Various others
+
+# Misc Changes
+ * Automatic conveyor/conduit bridging (genNAowl)
+ * Autocomplete in chat for content icons (type : and then the first part of the name, use tab to complete)
+ * Autocomplete in chat for player names (type @ and then start typing the name, press tab to complete)
+
+# Credits
+ * Game by anuke, client by foo and buthed010203
