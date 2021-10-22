@@ -371,6 +371,7 @@ public class SettingsMenuDialog extends SettingsDialog{
         tsr_client.textPref( "uuid", "Error");
         tsr_client.category("clientsettings");
         tsr_client.checkPref("runclientsidejs", false);
+        tsr_client.checkPref("showallblocks", false);
         tsr_client.addButton("resetupdateurl", () -> {
             String _name = "updateurl";
             becontrol.setUpdateAvailable(false);
