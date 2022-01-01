@@ -25,6 +25,7 @@ import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.input.*;
 import mindustry.tsr.ui.AdvancedSettingsTable;
+import mindustry.tsr.ui.ProfileManagerDialog;
 import mindustry.ui.*;
 
 import java.io.*;
@@ -365,10 +366,6 @@ public class SettingsMenuDialog extends SettingsDialog{
         if (steam) client.checkPref("unlockallachievements", false);
         // End Client Settings
 
-
-        tsr_client.category("vanillasettings");
-        tsr_client.textPref( "name", "Error");
-        tsr_client.textPref( "uuid", "Error");
         tsr_client.category("clientsettings");
         tsr_client.checkPref("runclientsidejs", false);
         tsr_client.checkPref("showallblocks", false);
@@ -385,6 +382,7 @@ public class SettingsMenuDialog extends SettingsDialog{
                 }
             });
         });
+        //tsr_client.textPref("profiles", "");
 
         game.screenshakePref();
         if(mobile){

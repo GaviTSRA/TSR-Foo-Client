@@ -1,4 +1,4 @@
-# V0.1
+# Alpha v1.0
 -Client side js -> any message starting with '?cjs' will be executed
 -[UNTESTED]Update button Foo -> TSR-Foo
  (Requires reset button(Settings -> TSR Client -> Reset update url) to be pressed)
@@ -12,12 +12,12 @@
 -Pause Menu:
     -Reconnect button
 
-
-# TODO
--More translations
--README.md
--Make TextPref input field bigger
--Update discord rich presence
-
-# Ideas for next version(s)
--Make all blocks visible
+# Alpha v2.0
+-Settings Menu:
+    -Make all blocks visible box
+-Pause Menu:
+    -Profile Manager:
+        -Use profile
+        -Add Profile
+        -Delete profile
+    -Random profile button

@@ -461,6 +461,8 @@ public class JoinDialog extends BaseDialog{
     }
 
     public void connect(String ip, int port) {
+        Core.settings.put("currentserverip", ip);
+        Core.settings.put("currentserverport", port);
         connect(ip, port, null);
     }
 
@@ -477,6 +479,8 @@ public class JoinDialog extends BaseDialog{
             netClient.disconnectQuietly();
         });
 
+        Core.settings.put("currentserverip", ip);
+        Core.settings.put("currentserverport", port);
         Time.runTask(2f, () -> {
             logic.reset();
             net.reset();
