@@ -53,7 +53,7 @@ public class DesktopLauncher extends ClientLauncher{
 
             Version.init();
             config = new SdlConfig() {{
-                title = Strings.format("Mindustry (v@) | Foo's Client (@)", Version.buildString(), Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
+                title = Strings.format("Mindustry (v@) | TSRS-Foo Client (@)", Version.buildString(), Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
                 maximized = true;
                 width = 900;
                 height = 700;
@@ -320,7 +320,7 @@ public class DesktopLauncher extends ClientLauncher{
 
             presence2.largeImageKey = presence.largeImageKey = "logo";
             presence2.smallImageKey = presence.smallImageKey = "foo";
-            presence2.smallImageText = presence.smallImageText = Strings.format("Foo's Client (@)", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
+            presence2.smallImageText = presence.smallImageText = Strings.format("TSR-Foo Client (@)", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
             presence2.startTimestamp = presence.startTimestamp = beginTime/1000;
             presence2.label1 = "Client Github";
             presence2.url1 = "https://github.com/mindustry-antigrief/mindustry-client-v6";
@@ -332,7 +332,7 @@ public class DesktopLauncher extends ClientLauncher{
             //Steam mostly just expects us to give it a nice string, but it apparently expects "steam_display" to always be a loc token, so I've uploaded this one which just passes through 'steam_status' raw.
             SVars.net.friends.setRichPresence("steam_display", "#steam_status_raw");
 
-            SVars.net.friends.setRichPresence("steam_status", Strings.format("Foo's Client (@) | @", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion, inGame ? gameMapWithWave : uiState));
+            SVars.net.friends.setRichPresence("steam_status", Strings.format("TSR-Foo Client (@) | @", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion, inGame ? gameMapWithWave : uiState));
         }
     }
 

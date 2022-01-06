@@ -24,6 +24,8 @@ import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.input.*;
+import mindustry.tsr.ui.AdvancedSettingsTable;
+import mindustry.tsr.ui.ProfileManagerDialog;
 import mindustry.ui.*;
 
 import java.io.*;
@@ -37,6 +39,7 @@ public class SettingsMenuDialog extends SettingsDialog{
     /** Mods break if these are changed to BetterSettingsTable so instead we cast them into different vars and just use those. */
     public SettingsTable graphics = new BetterSettingsTable(), sound = new BetterSettingsTable(), game = new BetterSettingsTable();
     public BetterSettingsTable realGraphics, realGame, realSound, client;
+    public AdvancedSettingsTable tsr_client;
 
     private Table prefs;
     private Table menu;
@@ -88,6 +91,7 @@ public class SettingsMenuDialog extends SettingsDialog{
         realGraphics = (BetterSettingsTable) graphics;
         realSound = (BetterSettingsTable) sound;
         client = new BetterSettingsTable();
+        tsr_client = new AdvancedSettingsTable(false);
 
         prefs = new Table();
         prefs.top();
@@ -293,6 +297,8 @@ public class SettingsMenuDialog extends SettingsDialog{
         menu.row();
         menu.button("@settings.client", style, () -> visible(3));
         menu.row();
+        menu.button("@tsr.settings", style, () -> visible(4));
+        menu.row();
         menu.button("@settings.language", style, ui.language::show);
         if(!mobile || Core.settings.getBool("keyboard")){
             menu.row();
@@ -318,7 +324,7 @@ public class SettingsMenuDialog extends SettingsDialog{
         client.sliderPref("slagwarningdistance", 10, 0, 101, s -> s == 101 ? "Always" : s == 0 ? "Never" : Integer.toString(s));
         client.sliderPref("slagsounddistance", 5, 0, 101, s -> s == 101 ? "Always" : s == 0 ? "Never" : Integer.toString(s));
         client.checkPref("breakwarnings", true); // Warnings for removal of certain sandbox stuff (mostly sources)
-        client.checkPref("powersplitwarnings", true); // TODO: Add a minimum building requirement and a setting for it
+        client.checkPref("powersplitwarnings", true); // TO-DO: Add a minimum building requirement and a setting for it
         client.checkPref("viruswarnings", true);
         client.checkPref("commandwarnings", true);
         client.checkPref("removecorenukes", false);
@@ -330,7 +336,7 @@ public class SettingsMenuDialog extends SettingsDialog{
         client.checkPref("highlightcryptomsg", true);
         client.checkPref("highlightclientmsg", false);
         client.checkPref("displayasuser", false);
-        client.checkPref("broadcastcoreattack", false); // TODO: Multiple people using this setting at once will cause chat spam
+        client.checkPref("broadcastcoreattack", false); // TO-DO: Multiple people using this setting at once will cause chat spam
         client.checkPref("showuserid", false);
 
         client.category("controls");
@@ -360,6 +366,23 @@ public class SettingsMenuDialog extends SettingsDialog{
         if (steam) client.checkPref("unlockallachievements", false);
         // End Client Settings
 
+        tsr_client.category("clientsettings");
+        tsr_client.checkPref("runclientsidejs", false);
+        tsr_client.checkPref("showallblocks", false);
+        tsr_client.addButton("resetupdateurl", () -> {
+            String _name = "updateurl";
+            becontrol.setUpdateAvailable(false);
+            settings.put(_name, "GaviTSRA/TSR-Foo-Client");
+            becontrol.checkUpdate(result -> {
+                ui.loadfrag.hide();
+                if(!result){
+                    ui.showInfo("@be.noupdates");
+                } else {
+                    becontrol.showUpdateDialog();
+                }
+            });
+        });
+        //tsr_client.textPref("profiles", "");
 
         game.screenshakePref();
         if(mobile){
@@ -518,7 +541,7 @@ public class SettingsMenuDialog extends SettingsDialog{
             pref(new Category(name));
         }
 
-        /* TODO: Actually add this at some point, this sounds like a massive pain in the ass tho.
+        /* TO-DO: Actually add this at some point, this sounds like a massive pain in the ass tho.
         public void textPref(String name, String def){
             settings.defaults(name, def);
             pref(new TextPref(name));
@@ -542,13 +565,13 @@ public class SettingsMenuDialog extends SettingsDialog{
 
         /** Since the update pref takes half a page and implementing all this in a non static manner is a pain, I'm leaving it here for now. */
         private void updatePref(){
-            settings.defaults("updateurl", "mindustry-antigrief/mindustry-client");
+            settings.defaults("updateurl", "GaviTSRA/TSR-Foo-Client");
             if (!Version.updateUrl.isEmpty()) settings.put("updateurl", Version.updateUrl); // overwrites updateurl on every boot, shouldn't be a real issue
             pref(new Setting() {
                 boolean urlChanged;
 
                 @Override
-                public void add(SettingsTable table) { // Update URL with update button TODO: Move this to TextPref when i decide im willing to spend 6 hours doing so
+                public void add(SettingsTable table) { // Update URL with update button TO-DO: Move this to TextPref when i decide im willing to spend 6 hours doing so --> This already took more than 6 hours but if you ignore the formatting it was done in 10 minutes
                     name = "updateurl";
                     title = bundle.get("setting." + name + ".name");
 
@@ -571,7 +594,7 @@ public class SettingsMenuDialog extends SettingsDialog{
                             becontrol.setUpdateAvailable(false); // Set this to false as we don't know if this is even a valid URL.
                             urlChanged = true;
                             settings.put(name, text);
-                        }).growX().get().setMessageText("mindustry-antigrief/mindustry-client-v6");
+                        }).growX().get().setMessageText("GaviTSRA/TSR-Foo-Client");
                     }).left().fillX().padTop(3).height(32);
                     table.row();
                 }
@@ -645,7 +668,7 @@ public class SettingsMenuDialog extends SettingsDialog{
 
     private void visible(int index){
         prefs.clearChildren();
-        prefs.add(new Table[]{game, graphics, sound, client}[index]);
+        prefs.add(new Table[]{game, graphics, sound, client, tsr_client}[index]);
     }
 
     @Override

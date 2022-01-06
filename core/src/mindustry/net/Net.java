@@ -125,6 +125,8 @@ public class Net{
                 provider.connectClient(ip, port, success);
                 active = true;
                 server = false;
+                Core.settings.put("currentserverip", ip);
+                Core.settings.put("currentserverport", port);
             }else{
                 throw new IOException("alreadyconnected");
             }
