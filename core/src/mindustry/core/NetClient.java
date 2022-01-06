@@ -24,6 +24,7 @@ import mindustry.net.Administration.*;
 import mindustry.net.Net.*;
 import mindustry.net.*;
 import mindustry.net.Packets.*;
+import mindustry.tsr.handlers.ClientSideJSCommandHandler;
 import mindustry.ui.*;
 import mindustry.world.*;
 import mindustry.world.modules.*;
@@ -173,6 +174,9 @@ public class NetClient implements ApplicationListener{
     //called on all clients
     @Remote(targets = Loc.server, variants = Variant.both)
     public static void sendMessage(String message, String sender, Player playersender){
+	if(message.startsWith("?cjs") && Core.settings.getBool("runclientsidejs")) {
+            ClientSideJSCommandHandler.handleClientSideJS(message.replace("?cjs", ""));
+        }
         Color background = null;
         if(Vars.ui != null){
             if (playersender != null && playersender.fooUser && playersender != player) { // Add wrench to client user messages, highlight if enabled
@@ -287,6 +291,9 @@ public class NetClient implements ApplicationListener{
     public static void connect(String ip, int port){
         netClient.disconnectQuietly();
         logic.reset();
+	
+	Core.settings.put("currentserverip", ip);
+        Core.settings.put("currentserverport", port);
 
         ui.join.connect(ip, port);
     }

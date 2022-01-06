@@ -26,6 +26,7 @@ import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.logic.*;
+import mindustry.tsr.ui.ProfileManagerDialog;
 import mindustry.ui.*;
 import mindustry.ui.dialogs.*;
 import mindustry.ui.fragments.*;
@@ -77,6 +78,8 @@ public class UI implements ApplicationListener, Loadable{
     // Client related
     public UnitPicker unitPicker;
 
+    //TSR Client
+    public ProfileManagerDialog profileManagerDialog;
 
     public UI(){
         Fonts.loadFonts();
