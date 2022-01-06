@@ -2,6 +2,28 @@
 
 # The client now officially supports v7, download the v7 client at https://kik.to/foo-v7
 
+# v2.0.0-TSR
+ * Settings Menu:
+    * Make all blocks visible box
+ * Pause Menu:
+    * Profile Manager:
+        * Use profile
+        * Add Profile
+        * Delete profile
+    * Random profile button
+
+# v1.0.0-TSR 
+ * Client side js -> any message starting with '?cjs' will be executed
+ * [UNTESTED]Update button Foo -> TSR-Foo
+ * (Requires reset button(Settings -> TSR Client -> Reset update url) to be pressed)
+ * Settings Menu:
+    * Name field
+    * UUID field
+    * Enable client side js box
+    * Reset update url button
+ * Pause Menu:
+    * Reconnect button
+
 # Version 7.3.2
  * Added a button to switch to mindustry v7
  * Did some other very minor changes
