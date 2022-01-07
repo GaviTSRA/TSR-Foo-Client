@@ -1,5 +1,5 @@
 [![Release Update](../../workflows/Release%20Update/badge.svg)](https://gavitsra.github.io/TSR-Foo-Client)
-[![Discord](https://img.shields.io/discord/741710208501547161.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yhSGPT2cu2)
+[![Discord](https://img.shields.io/discord/818951190721200158.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yhSGPT2cu2)
 
 ![Logo](core/assets-raw/sprites/ui/logo.png)
 
