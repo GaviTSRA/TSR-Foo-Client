@@ -1,9 +1,11 @@
 [![Release Update](../../workflows/Release%20Update/badge.svg)](https://gavitsra.github.io/TSR-Foo-Client)
 [![Discord](https://img.shields.io/discord/741710208501547161.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yhSGPT2cu2)
 
-A sandbox tower defense game written in Java.
-This is my fork of Foo's Client, which is a fork from the game.
-I want to add improvements on top of Foo's Client, since I like it.
+![Logo](core/assets-raw/sprites/ui/logo.png)
+
+A sandbox tower defense game written in Java.  
+This is my fork of Foo's Client, which is a fork from the game.  
+I want to add improvements on top of Foo's Client, since I like it.  
 
 _[Trello Board](https://trello.com/b/aE2tcUwF/mindustry-40-plans)_  
 _[Wiki](https://mindustrygame.github.io/wiki)_  
