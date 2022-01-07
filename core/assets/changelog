@@ -2,7 +2,10 @@
 
 # The client now officially supports v7, download the v7 client at https://kik.to/foo-v7
 
-# v2.0.0-TSR
+# Version 2.0.1-TSR
+ * This is an update
+
+# Version 2.0.0-TSR
  * Settings Menu:
     * Make all blocks visible box
  * Pause Menu:
@@ -12,7 +15,7 @@
         * Delete profile
     * Random profile button
 
-# v1.0.0-TSR 
+# Version 1.0.0-TSR 
  * Client side js -> any message starting with '?cjs' will be executed
  * [UNTESTED]Update button Foo -> TSR-Foo
  * (Requires reset button(Settings -> TSR Client -> Reset update url) to be pressed)
