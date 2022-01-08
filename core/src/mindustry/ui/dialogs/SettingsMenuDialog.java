@@ -29,6 +29,7 @@ import mindustry.graphics.*;
 import mindustry.input.*;
 import mindustry.logic.*;
 import mindustry.service.*;
+import mindustry.tsr.ui.AdvancedSettingsTable;
 import mindustry.type.*;
 import mindustry.ui.*;
 import mindustry.world.blocks.*;
@@ -43,6 +44,7 @@ import static mindustry.Vars.*;
 public class SettingsMenuDialog extends BaseDialog{
     /** Mods break if these are changed to BetterSettingsTable so instead we cast them into different vars and just use those. */
     public SettingsTable graphics, sound, game, main, client, moderation;
+    public AdvancedSettingsTable tsr_client;
 
     private Table prefs;
     private Table menu;
@@ -83,6 +85,7 @@ public class SettingsMenuDialog extends BaseDialog{
         graphics = new SettingsTable();
         sound = new SettingsTable();
         client = new SettingsTable();
+        tsr_client = new AdvancedSettingsTable(false);
         moderation = new SettingsTable();
 
         prefs = new Table();
@@ -278,6 +281,8 @@ public class SettingsMenuDialog extends BaseDialog{
             menu.row();
             menu.button("@settings.controls", style, ui.controls::show);
         }
+        menu.button("@tsr.settings", style, () -> visible(4));
+        menu.row();
 
         menu.row();
         menu.button("@settings.data", style, () -> dataDialog.show());
@@ -357,6 +362,22 @@ public class SettingsMenuDialog extends BaseDialog{
         client.checkPref("processorconfigs", false);
         // End Client Settings
 
+        tsr_client.category("clientsettings");
+        tsr_client.checkPref("runclientsidejs", false);
+        tsr_client.checkPref("showallblocks", false);
+        tsr_client.addButton("resetupdateurl", () -> {
+            String _name = "updateurl";
+            becontrol.setUpdateAvailable(false);
+            settings.put(_name, "GaviTSRA/TSR-Foo-Client");
+            becontrol.checkUpdate(result -> {
+                ui.loadfrag.hide();
+                if(!result){
+                    ui.showInfo("@be.noupdates");
+                } else {
+                    becontrol.showUpdateDialog();
+                }
+            });
+        });
 
         game.sliderPref("saveinterval", 60, 10, 5 * 120, 10, i -> Core.bundle.format("setting.seconds", i));
         if(mobile){
@@ -606,7 +627,7 @@ public class SettingsMenuDialog extends BaseDialog{
 
     public void visible(int index){
         prefs.clearChildren();
-        prefs.add(new Table[]{game, graphics, sound, client, moderation}[index]);
+        prefs.add(new Table[]{game, graphics, sound, client, tsr_client, moderation}[index]);
     }
 
     @Override
@@ -820,7 +841,7 @@ public class SettingsMenuDialog extends BaseDialog{
 
         /** Since the update pref takes half a page and implementing all this in a non static manner is a pain, I'm leaving it here for now. */
         private void updatePref(){
-            settings.defaults("updateurl", "mindustry-antigrief/mindustry-client-v7-builds");
+            settings.defaults("updateurl", "GaviTSRA/TSR-Foo-Client");
             if (!Version.updateUrl.isEmpty()) settings.put("updateurl", Version.updateUrl); // overwrites updateurl on every boot, shouldn't be a real issue
             pref(new Setting("updateurl") {
                 boolean urlChanged;
@@ -849,7 +870,7 @@ public class SettingsMenuDialog extends BaseDialog{
                             becontrol.setUpdateAvailable(false); // Set this to false as we don't know if this is even a valid URL.
                             urlChanged = true;
                             settings.put(name, text);
-                        }).width(450).get().setMessageText("mindustry-antigrief/mindustry-client");
+                        }).width(450).get().setMessageText("GaviTSRA/TSR-Foo-Client");
                     }).left().expandX().padTop(3).height(32).padBottom(3);
                     table.row();
                 }

@@ -155,6 +155,8 @@ public class Net{
     public void connect(String ip, int port, Runnable success){
         try{
             if(!active){
+                Core.settings.put("currentserverip", ip);
+                Core.settings.put("currentserverport", port);
                 provider.connectClient(ip, port, success);
                 active = true;
                 server = false;

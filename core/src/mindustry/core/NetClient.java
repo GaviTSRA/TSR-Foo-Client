@@ -317,6 +317,9 @@ public class NetClient implements ApplicationListener{
         netClient.disconnectQuietly();
         logic.reset();
 
+        Core.settings.put("currentserverip", ip);
+        Core.settings.put("currentserverport", port);
+
         ui.join.connect(ip, port);
     }
 

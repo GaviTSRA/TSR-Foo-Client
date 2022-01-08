@@ -1,14 +1,18 @@
 ![Logo](core/assets-raw/sprites/ui/foo.png)
 
-[![Release Update](../../workflows/Release%20Update/badge.svg)](https://mindustry-antigrief.github.io/mindustry-client)
-[![Tests (Unstable)](../../workflows/Java%20Tests/badge.svg?branch=v7)](https://mindustry-antigrief.github.io/mindustry-client-v7-builds)
-[![Discord](https://img.shields.io/discord/741710208501547161.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yp9ZW7j)
+This is my fork of Foo's Client, which is a fork from the game.  
+I want to add improvements on top of Foo's Client, since I like it.
+
+[![Release Update](../../workflows/Release%20Update/badge.svg)](https://gavitsra.github.io/TSR-Foo-Client)
+[![Discord](https://img.shields.io/discord/818951190721200158.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yp9ZW7j)
 
 # Installer
-Install `mindustry-antigrief/client-installer` through the mod browser in the vanilla game and allow the game to restart, upon restarting you will be prompted with an install popup, choose a version and it will install itself.
+Foo: Install `mindustry-antigrief/client-installer` through the mod browser in the vanilla game and allow the game to restart, upon restarting you will be prompted with an install popup, choose a version and it will install itself.  
+TSR-Foo: Soon  
+
+# INSTALL METHODS ARE OUTDATED
 
 ## [Changelog](./core/assets/changelog)
-## [Development/Unstable Builds](../../../mindustry-client-v7-builds)
 ### Running The Jar On Mac
 For whatever reason, MacOS refuses to be normal. Running the jar is slightly harder, open terminal and type `java -XstartOnFirstThread -jar <jar>` where `<jar>` is the path to the jar file (just click and drag the file in).
 ## Steam

@@ -56,8 +56,7 @@ jobs:
           tag_name: ${{ github.ref }}
           release_name: Release ${{ env.VERSION }} (${{ steps.time.outputs.formattedTime }})
           body: | # The release body with the latest set of changes from the changelog
-            # Foo's Client (${{ env.VERSION }})
-            ### Steam installation instructions [here](../../#steam)
+            # TSR-Foo Client (${{ env.VERSION }})
             ## Latest Changelog (May be out of date)
             ${{ env.CHANGELOG }}
           draft: false

@@ -1,8 +1,14 @@
 package mindustry.ui.dialogs;
 
 import arc.*;
+import arc.math.Rand;
+import arc.util.serialization.Base64Coder;
 import mindustry.client.ui.*;
 import mindustry.gen.*;
+import mindustry.tsr.handlers.ReconnectHandler;
+import mindustry.tsr.ui.ProfileManagerDialog;
+
+import java.util.Random;
 
 import static mindustry.Vars.*;
 
@@ -54,7 +60,30 @@ public class PausedDialog extends BaseDialog{
                         ui.host.show();
                     }
                 }
-            }).disabled(b -> !((steam && net.server()) || !net.active())).colspan(2).width(dw * 2 + 10f).update(e -> e.setText(net.server() && steam ? "@invitefriends" : "@hostserver"));
+            }).disabled(b -> !((steam && net.server()) || !net.active())).update(e -> e.setText(net.server() && steam ? "@invitefriends" : "@hostserver"));
+            cont.button("@tsr.reconnect", Icon.host, ReconnectHandler::reconnect);
+
+            cont.row();
+
+            cont.button("@tsr.profiles.manage", Icon.book, () -> {
+                ui.profileManagerDialog = new ProfileManagerDialog();
+                ui.profileManagerDialog.show();
+            });
+            cont.button("@tsr.profile.random", Icon.refresh, () -> {
+                String newUUID;
+                byte[] result = new byte[8];
+                new Rand().nextBytes(result);
+                newUUID = new String(Base64Coder.encode(result));
+                Core.settings.put("uuid", newUUID);
+
+                String newName;
+                String[] nameParts1 = {"Luk", "Random", "Name", "Freeeeee", "|Yes|", "BBBB", "I am ", "cl", "Anifan", "MAIf", "anf"};
+                String[] nameParts2 = {".org", "in", "or", "chuck", "-1", "|Why|", "AAAA", " - the only one", "as", "rooter", "dead"};
+                newName = nameParts1[new Random().nextInt(nameParts1.length)];
+                newName += nameParts2[new Random().nextInt(nameParts2.length)];
+                Core.settings.put("name", newName);
+                Call.infoMessage("Assigned random profile");
+            });
 
             cont.row();
 

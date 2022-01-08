@@ -1,5 +1,6 @@
 package mindustry.content;
 
+import arc.Core;
 import arc.graphics.*;
 import arc.struct.*;
 import mindustry.*;
@@ -108,7 +109,7 @@ public class Blocks implements ContentList{
         spawn = new SpawnBlock("spawn");
 
         cliff = new Cliff("cliff"){{
-            inEditor = false;
+            inEditor =  Core.settings.getBool("showallblocks") ? true :false;
             saveData = true;
         }};
 
@@ -856,33 +857,33 @@ public class Blocks implements ContentList{
         }};
 
         scrapWall = new Wall("scrap-wall"){{
-            requirements(Category.defense, BuildVisibility.sandboxOnly, with(Items.scrap, 6));
+            requirements(Category.defense,  Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with(Items.scrap, 6));
             health = 60 * wallHealthMultiplier;
             variants = 5;
         }};
 
         scrapWallLarge = new Wall("scrap-wall-large"){{
-            requirements(Category.defense, BuildVisibility.sandboxOnly, ItemStack.mult(scrapWall.requirements, 4));
+            requirements(Category.defense,  Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, ItemStack.mult(scrapWall.requirements, 4));
             health = 60 * 4 * wallHealthMultiplier;
             size = 2;
             variants = 4;
         }};
 
         scrapWallHuge = new Wall("scrap-wall-huge"){{
-            requirements(Category.defense, BuildVisibility.sandboxOnly, ItemStack.mult(scrapWall.requirements, 9));
+            requirements(Category.defense,  Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, ItemStack.mult(scrapWall.requirements, 9));
             health = 60 * 9 * wallHealthMultiplier;
             size = 3;
             variants = 3;
         }};
 
         scrapWallGigantic = new Wall("scrap-wall-gigantic"){{
-            requirements(Category.defense, BuildVisibility.sandboxOnly, ItemStack.mult(scrapWall.requirements, 16));
+            requirements(Category.defense,  Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, ItemStack.mult(scrapWall.requirements, 16));
             health = 60 * 16 * wallHealthMultiplier;
             size = 4;
         }};
 
         thruster = new Thruster("thruster"){{
-            requirements(Category.defense, BuildVisibility.sandboxOnly, with(Items.scrap, 96));
+            requirements(Category.defense,  Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with(Items.scrap, 96));
             health = 55 * 16 * wallHealthMultiplier;
             size = 4;
         }};
@@ -1058,17 +1059,17 @@ public class Blocks implements ContentList{
         //special transport blocks
 
         duct = new Duct("duct"){{
-            requirements(Category.distribution, BuildVisibility.debugOnly, with(Items.graphite, 5, Items.metaglass, 2));
+            requirements(Category.distribution, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.debugOnly, with(Items.graphite, 5, Items.metaglass, 2));
             speed = 4f;
         }};
 
         ductRouter = new DuctRouter("duct-router"){{
-            requirements(Category.distribution, BuildVisibility.debugOnly, with(Items.graphite, 10, Items.metaglass, 4));
+            requirements(Category.distribution, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.debugOnly, with(Items.graphite, 10, Items.metaglass, 4));
             speed = 4f;
         }};
 
         ductBridge = new DuctBridge("duct-bridge"){{
-            requirements(Category.distribution, BuildVisibility.debugOnly, with(Items.graphite, 20, Items.metaglass, 8));
+            requirements(Category.distribution, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.debugOnly, with(Items.graphite, 20, Items.metaglass, 8));
             speed = 4f;
         }};
 
@@ -1400,7 +1401,7 @@ public class Blocks implements ContentList{
         //region storage
 
         coreShard = new CoreBlock("core-shard"){{
-            requirements(Category.effect, BuildVisibility.editorOnly, with(Items.copper, 1000, Items.lead, 800));
+            requirements(Category.effect, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.editorOnly, with(Items.copper, 1000, Items.lead, 800));
             alwaysUnlocked = true;
 
             unitType = UnitTypes.alpha;
@@ -2129,51 +2130,51 @@ public class Blocks implements ContentList{
         //region sandbox
 
         powerSource = new PowerSource("power-source"){{
-            requirements(Category.power, BuildVisibility.sandboxOnly, with());
+            requirements(Category.power, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             powerProduction = 1000000f / 60f;
             alwaysUnlocked = true;
         }};
 
         powerVoid = new PowerVoid("power-void"){{
-            requirements(Category.power, BuildVisibility.sandboxOnly, with());
+            requirements(Category.power, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             alwaysUnlocked = true;
         }};
 
         itemSource = new ItemSource("item-source"){{
-            requirements(Category.distribution, BuildVisibility.sandboxOnly, with());
+            requirements(Category.distribution, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             alwaysUnlocked = true;
         }};
 
         itemVoid = new ItemVoid("item-void"){{
-            requirements(Category.distribution, BuildVisibility.sandboxOnly, with());
+            requirements(Category.distribution, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             alwaysUnlocked = true;
         }};
 
         liquidSource = new LiquidSource("liquid-source"){{
-            requirements(Category.liquid, BuildVisibility.sandboxOnly, with());
+            requirements(Category.liquid, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             alwaysUnlocked = true;
         }};
 
         liquidVoid = new LiquidVoid("liquid-void"){{
-            requirements(Category.liquid, BuildVisibility.sandboxOnly, with());
+            requirements(Category.liquid, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             alwaysUnlocked = true;
         }};
 
         payloadSource = new PayloadSource("payload-source"){{
-            requirements(Category.units, BuildVisibility.sandboxOnly, with());
+            requirements(Category.units, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             size = 5;
             alwaysUnlocked = true;
         }};
 
         payloadVoid = new PayloadVoid("payload-void"){{
-            requirements(Category.units, BuildVisibility.sandboxOnly, with());
+            requirements(Category.units, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.sandboxOnly, with());
             size = 5;
             alwaysUnlocked = true;
         }};
 
         //TODO move
         illuminator = new LightBlock("illuminator"){{
-            requirements(Category.effect, BuildVisibility.lightingOnly, with(Items.graphite, 12, Items.silicon, 8));
+            requirements(Category.effect, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.lightingOnly, with(Items.graphite, 12, Items.silicon, 8));
             brightness = 0.75f;
             radius = 140f;
             consumes.power(0.05f);
@@ -2196,7 +2197,7 @@ public class Blocks implements ContentList{
         //region campaign
 
         launchPad = new LaunchPad("launch-pad"){{
-            requirements(Category.effect, BuildVisibility.campaignOnly, with(Items.copper, 350, Items.silicon, 140, Items.lead, 200, Items.titanium, 150));
+            requirements(Category.effect, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.campaignOnly, with(Items.copper, 350, Items.silicon, 140, Items.lead, 200, Items.titanium, 150));
             size = 3;
             itemCapacity = 100;
             launchTime = 60f * 20;
@@ -2205,7 +2206,7 @@ public class Blocks implements ContentList{
         }};
 
         interplanetaryAccelerator = new Accelerator("interplanetary-accelerator"){{
-            requirements(Category.effect, BuildVisibility.campaignOnly, with(Items.copper, 16000, Items.silicon, 11000, Items.thorium, 13000, Items.titanium, 12000, Items.surgeAlloy, 6000, Items.phaseFabric, 5000));
+            requirements(Category.effect, Core.settings.getBool("showallblocks") ? BuildVisibility.shown : BuildVisibility.campaignOnly, with(Items.copper, 16000, Items.silicon, 11000, Items.thorium, 13000, Items.titanium, 12000, Items.surgeAlloy, 6000, Items.phaseFabric, 5000));
             researchCostMultiplier = 0.1f;
             size = 7;
             hasPower = true;

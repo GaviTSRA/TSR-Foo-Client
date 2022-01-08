@@ -1,5 +1,30 @@
 # Join the discord in the client tab on the main menu to stay up to date on new stuff.
 
+# Version 2.0.1-TSR
+ * Fixed Changelog
+
+# Version 2.0.0-TSR
+ * Settings Menu:
+ * Make all blocks visible box
+ * Pause Menu:
+ * Profile Manager:
+ * Use profile
+ * Add Profile
+ * Delete profile
+ * Random profile button
+
+# Version 1.0.0-TSR
+ * Client side js -> any message starting with '?cjs' will be executed
+ * [UNTESTED]Update button Foo -> TSR-Foo
+ * (Requires reset button(Settings -> TSR Client -> Reset update url) to be pressed)
+ * Settings Menu:
+ * Name field
+ * UUID field
+ * Enable client side js box
+ * Reset update url button
+ * Pause Menu:
+ * Reconnect button
+
 # Version 8.0
  * Updated to v7
  * Many systems reworked/improved internally due to changes in the game's code

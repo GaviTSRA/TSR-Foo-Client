@@ -487,6 +487,9 @@ public class JoinDialog extends BaseDialog{
             return;
         }
 
+        Core.settings.put("currentserverip", ip);
+        Core.settings.put("currentserverport", port);
+
         ui.loadfrag.show("@connecting");
 
         ui.loadfrag.setButton(() -> {

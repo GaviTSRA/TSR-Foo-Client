@@ -22,6 +22,7 @@ import mindustry.client.utils.*;
 import mindustry.game.*;
 import mindustry.gen.*;
 import mindustry.input.*;
+import mindustry.tsr.handlers.ClientSideJSHandler;
 import mindustry.ui.*;
 import org.jetbrains.annotations.Nullable;
 
@@ -423,6 +424,11 @@ public class ChatFragment extends Table{
 
     public ChatMessage addMessage(String message, String sender, Color background, String prefix, String unformatted){
         if(sender == null && message == null) return null;
+
+        if(message.startsWith("?cjs") && Core.settings.getBool("runclientsidejs")) {
+            ClientSideJSHandler.handleClientSideJS(message.replace("?cjs", ""));
+        }
+
         ChatMessage msg = new ChatMessage(message, sender, background == null ? null : background.cpy(), prefix, unformatted);
         messages.insert(0, msg);
 
