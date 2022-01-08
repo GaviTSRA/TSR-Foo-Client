@@ -1,29 +1,26 @@
 # Join the discord in the client tab on the main menu to stay up to date on new stuff.
 
-# Version 2.0.1-TSR
- * This is an update
-
 # Version 2.0.0-TSR
  * Settings Menu:
-    * Make all blocks visible box
+ * Make all blocks visible box
  * Pause Menu:
-    * Profile Manager:
-        * Use profile
-        * Add Profile
-        * Delete profile
-    * Random profile button
+ * Profile Manager:
+ * Use profile
+ * Add Profile
+ * Delete profile
+ * Random profile button
 
 # Version 1.0.0-TSR 
  * Client side js -> any message starting with '?cjs' will be executed
- * [UNTESTED]Update button Foo -> TSR-Foo
+ * Update button Foo -> TSR-Foo
  * (Requires reset button(Settings -> TSR Client -> Reset update url) to be pressed)
  * Settings Menu:
-    * Name field
-    * UUID field
-    * Enable client side js box
-    * Reset update url button
+ * Name field
+ * UUID field
+ * Enable client side js box
+ * Reset update url button
  * Pause Menu:
-    * Reconnect button
+ * Reconnect button
 
 # The client now officially supports v7, download the v7 client at https://kik.to/foo-v7
 
