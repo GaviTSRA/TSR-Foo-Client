@@ -315,7 +315,7 @@ public class SettingsMenuDialog extends BaseDialog{
         client.checkPref("signmessages", true);
         client.checkPref("highlightcryptomsg", true);
         client.checkPref("highlightclientmsg", false);
-        client.checkPref("displayasuser", false);
+        client.checkPref("displayasuser", true);
         client.checkPref("broadcastcoreattack", false); // TODO: Multiple people using this setting at once will cause chat spam
         client.checkPref("showuserid", false);
 
@@ -381,8 +381,8 @@ public class SettingsMenuDialog extends BaseDialog{
         });
 
         game.sliderPref("saveinterval", 60, 10, 5 * 120, 10, i -> Core.bundle.format("setting.seconds", i));
+        game.checkPref("autotarget", false);
         if(mobile){
-            game.checkPref("autotarget", true);
             if(!ios){
                 game.checkPref("keyboard", false, val -> {
                     control.setInput(val ? new DesktopInput() : new MobileInput());

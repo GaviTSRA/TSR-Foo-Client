@@ -68,6 +68,11 @@ object Main : ApplicationListener {
             communicationSystem = SwitchableCommunicationSystem(DummyCommunicationSystem(mutableListOf()))
             communicationSystem.init()
         }
+
+        Core.settings.getBoolOnce("displaydef") {
+            Core.settings.put("displayasuser", true)
+        }
+
         communicationClient = Packets.CommunicationClient(communicationSystem)
 
         Navigation.navigator = AStarNavigator
@@ -150,7 +155,7 @@ object Main : ApplicationListener {
         fun invalid(msg: ChatFragment.ChatMessage, cert: X509Certificate?) {
             msg.sender = cert?.run { keyStorage.aliasOrName(this) }?.stripColors()?.plus("[scarlet] impersonator") ?: "Verification failed"
             msg.backgroundColor = ClientVars.invalid
-            msg.prefix = "${Iconc.cancel} "
+            msg.prefix = "${Iconc.cancel} ${msg.prefix} "
             msg.format()
         }
 
@@ -165,7 +170,7 @@ object Main : ApplicationListener {
             Signatures.VerifyResult.VALID -> {
                 msg.sender = output.second?.run { keyStorage.aliasOrName(this) }
                 msg.backgroundColor = ClientVars.verified
-                msg.prefix = "${Iconc.ok} "
+                msg.prefix = "${Iconc.ok} ${msg.prefix} "
                 msg.format()
                 true
             }
@@ -181,13 +186,13 @@ object Main : ApplicationListener {
 
     fun sign(content: String): String {
 //        if (!Core.settings.getBool("signmessages")) return content  // ID is also needed for attachments now
-        if (content.startsWith("/")) return content
+        if (content.startsWith("/") && !(content.startsWith("/t ") || content.startsWith("/a "))) return content
 
         val msgId = Random.nextInt().toShort()
         val contentWithId = content + InvisibleCharCoder.encode(msgId.toBytes())
 
         communicationClient.send(signatures.signatureTransmission(
-            contentWithId.encodeToByteArray(),
+            contentWithId.replace("^/[t|a] ".toRegex(), "").encodeToByteArray(),
             communicationSystem.id,
             msgId) ?: return contentWithId)
 
@@ -305,7 +310,7 @@ object Main : ApplicationListener {
             when (transmission) {
                 is MessageTransmission -> {
                     ClientVars.lastCertName = system.peer.expectedCert.readableName
-                    Vars.ui.chatfrag.addMessage(transmission.content, "[white]" + keyStorage.aliasOrName(system.peer.expectedCert) + "[accent] -> [coral]" + (keyStorage.cert()?.readableName ?: "you"), ClientVars.encrypted).prefix = "${Iconc.ok} "
+                    Vars.ui.chatfrag.addMessage(transmission.content, "[white]" + keyStorage.aliasOrName(system.peer.expectedCert) + "[accent] -> [coral]" + (keyStorage.cert()?.readableName ?: "you"), ClientVars.encrypted).run{ prefix = "${Iconc.ok} $prefix " }
                 }
 
                 is CommandTransmission -> {
