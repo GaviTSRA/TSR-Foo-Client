@@ -31,7 +31,7 @@ public class ImpactReactor extends PowerGenerator{
     public int explosionRadius = 23;
     public int explosionDamage = 1900;
     public Effect explodeEffect = Fx.impactReactorExplosion;
-    public int floodNullifierRange = 16 * tilesize;
+    public float floodNullifierRange;
 
     public Color plasma1 = Color.valueOf("ffd06b"), plasma2 = Color.valueOf("ff361b");
 
@@ -52,6 +52,12 @@ public class ImpactReactor extends PowerGenerator{
     }
 
     @Override
+    public void init(){
+        super.init();
+        floodNullifierRange = (16 - size/2f) * tilesize; // io programmn't and didn't factor in the actual reactor size
+    }
+
+    @Override
     public void setBars(){
         super.setBars();
 
@@ -66,15 +72,15 @@ public class ImpactReactor extends PowerGenerator{
     public void drawPlace(int x, int y, int rotation, boolean valid) {
         super.drawPlace(x, y, rotation, valid);
         Drawf.dashCircle(x * tilesize + offset, y * tilesize + offset, explosionRadius * tilesize, Color.coral);
-        if (UtilitiesKt.flood()) {
+        if (ClientUtilsKt.flood()) {
             Drawf.dashCircle(x * tilesize + offset, y * tilesize + offset, floodNullifierRange, Color.orange);
-            indexer.eachBlock(null, x * tilesize + offset, y * tilesize + offset, floodNullifierRange, b -> b instanceof CoreBlock.CoreBuild, b -> Drawf.selected(b, Color.orange));
+            indexer.eachBlock(null, x * tilesize + offset, y * tilesize + offset, floodNullifierRange, b -> b instanceof CoreBlock.CoreBuild && b.within(x, y, floodNullifierRange), b -> Drawf.selected(b, Color.orange));
         }
     }
 
     @Override
     public void drawRequestConfigTop(BuildPlan req, Eachable<BuildPlan> list){
-        if (UtilitiesKt.flood()) {
+        if (ClientUtilsKt.flood()) {
             Drawf.dashCircle(req.drawx(), req.drawy(), floodNullifierRange, Color.orange);
             indexer.eachBlock(null, req.drawx(), req.drawy(), floodNullifierRange, b -> b instanceof CoreBlock.CoreBuild, b -> Drawf.selected(b, Color.orange));
         }

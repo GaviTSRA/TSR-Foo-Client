@@ -13,7 +13,6 @@ import arc.util.Timer.*;
 import arc.util.serialization.*;
 import mindustry.*;
 import mindustry.core.*;
-import mindustry.game.*;
 import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
@@ -26,7 +25,7 @@ import static mindustry.Vars.*;
 
 public class JoinDialog extends BaseDialog{
     //TODO unused
-    public Seq<Host> commmunityHosts = new Seq<>();
+    public Seq<Host> communityHosts = new Seq<>();
     Seq<Server> servers = new Seq<>();
     Dialog add;
     Server renaming;
@@ -362,7 +361,7 @@ public class JoinDialog extends BaseDialog{
     }
 
     void refreshCommunity(){
-        commmunityHosts.clear();
+        communityHosts.clear();
         int cur = refreshes;
 
         global.clear();
@@ -385,7 +384,7 @@ public class JoinDialog extends BaseDialog{
                     res.port = resport;
                     res.group = group.name;
 
-                    commmunityHosts.add(res);
+                    communityHosts.add(res);
 
                     //add header
                     if(groupTable[0] == null){
@@ -499,10 +498,12 @@ public class JoinDialog extends BaseDialog{
 
         Host[] hostFinal = {host};
 
-        if(Core.settings.getBool("allowjoinany")) net.pingHost(ip, port, h -> {
-            hostFinal[0] = h;
-            Version.build = hostFinal[0].version;
-        }, e -> {});
+        if(Core.settings.getBool("allowjoinany")) {
+            net.pingHost(ip, port, h -> {
+                hostFinal[0] = h;
+                Version.build = hostFinal[0].version;
+            }, e -> {});
+        }
 
         Time.runTask(2f, () -> {
             logic.reset();
@@ -515,7 +516,6 @@ public class JoinDialog extends BaseDialog{
                     lastHost = hostFinal[0];
                 }
             });
-            Events.fire(new EventType.ServerJoinEvent());
         });
     }
 

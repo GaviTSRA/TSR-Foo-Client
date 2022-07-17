@@ -2,42 +2,40 @@
 
 package mindustry.client.utils
 
-import arc.Core
-import arc.Events
-import arc.graphics.Pixmap
-import arc.graphics.PixmapIO
-import arc.math.geom.Point2
-import arc.scene.Element
-import arc.scene.ui.Dialog
-import arc.scene.ui.Label
-import arc.scene.ui.TextButton
-import arc.scene.ui.layout.Cell
-import arc.scene.ui.layout.Table
-import arc.util.Disposable
-import arc.util.Strings
-import arc.util.serialization.Base64Coder
-import mindustry.Vars
-import mindustry.client.communication.Base32768Coder
-import mindustry.core.World
-import mindustry.ui.Styles
-import mindustry.ui.dialogs.BaseDialog
-import mindustry.world.Tile
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import java.io.OutputStream
-import java.nio.ByteBuffer
-import java.security.cert.X509Certificate
-import java.time.DateTimeException
-import java.time.Instant
-import java.time.temporal.ChronoUnit
-import java.time.temporal.Temporal
-import java.time.temporal.TemporalUnit
+import arc.*
+import arc.graphics.*
+import arc.math.geom.*
+import arc.scene.*
+import arc.scene.ui.*
+import arc.scene.ui.layout.*
+import arc.util.*
+import arc.util.serialization.*
+import mindustry.*
+import mindustry.client.*
+import mindustry.client.communication.*
+import mindustry.core.*
+import mindustry.gen.*
+import mindustry.ui.*
+import mindustry.ui.dialogs.*
+import mindustry.world.*
+import java.io.*
+import java.nio.*
+import java.security.cert.*
+import java.time.*
+import java.time.temporal.*
 import java.util.*
-import java.util.zip.DeflaterInputStream
-import java.util.zip.InflaterInputStream
-import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
+import java.util.zip.*
+import kotlin.contracts.*
+import kotlin.math.*
+
+/** Performs the given [block] with each element as its receiver. */
+@OptIn(ExperimentalContracts::class)
+inline fun <T, R>Iterable<T>.withEach(block: T.() -> R) {
+    contract {
+        callsInPlace(block, InvocationKind.UNKNOWN)
+    }
+    forEach { it.block() }
+}
 
 fun Table.label(text: String): Cell<Label> {
     return add(Label(text))
@@ -65,11 +63,7 @@ fun Temporal.timeSince(other: Temporal, unit: TemporalUnit) = unit.between(this,
 fun Temporal.age(unit: TemporalUnit = ChronoUnit.SECONDS) = abs(this.timeSince(Instant.now(), unit))
 
 /** Adds an element to the table followed by a row. */
-fun <T : Element> Table.row(element: T): Cell<T> {
-    val out = add(element)
-    row()
-    return out
-}
+fun <T : Element> Table.row(element: T): Cell<T> = add(element).also { row() }
 
 inline fun dialog(name: String, style: Dialog.DialogStyle = Styles.defaultDialog, dialog: BaseDialog.() -> Unit): Dialog {
     return BaseDialog(name, style).apply(dialog)
@@ -183,14 +177,14 @@ inline fun circle(x: Int, y: Int, radius: Float, block: (x: Int, y: Int) -> Unit
 
 fun sq(inp: Int) = inp * inp
 
-/** Flips the two values in a [kotlin.Pair] */
-fun <A, B> kotlin.Pair<A, B>.flip() = kotlin.Pair(second, first)
+/** Flips the two values in a [Pair] */
+fun <A, B> Pair<A, B>.flip() = Pair(second, first)
 
-/** Checks equality between two [kotlin.Pair] instances, ignores value order. */
-infix fun <A, B> kotlin.Pair<A, B>.eqFlip(other: kotlin.Pair<A, B>) = this == other || this.flip() == other
+/** Checks equality between two [Pair] instances, ignores value order. */
+infix fun <A, B> Pair<A, B>.eqFlip(other: Pair<A, B>) = this == other || this.flip() == other
 
-/** Checks equality between a [kotlin.Pair] and two other values. */
-fun <A, B> kotlin.Pair<A, B>.eqFlip(a: A, b: B) = this.first == a && this.second == b || this.first == b && this.second == a
+/** Checks equality between a [Pair] and two other values. */
+fun <A, B> Pair<A, B>.eqFlip(a: A, b: B) = this.first == a && this.second == b || this.first == b && this.second == a
 
 fun <T> Iterable<T>.escape(escapement: T, vararg escape: T): List<T> {
     val output = mutableListOf<T>()
@@ -234,7 +228,7 @@ val X509Certificate.readableName: String
 
 fun String.asciiNoSpaces() = filter { it in '0'..'9' || it in 'A'..'Z' || it in 'a'..'z' || it == '_' }
 
-fun <T> next(event: Class<T>, repetitions: Int = 1, lambda: (T) -> Unit) {
+fun <T> next(event: Class<T>, repetitions: Int = 1, lambda: (T) -> Unit) { // FINISHME: Events.remove is fake news; doesn't ever work. This wouldn't even work if .remove did
     var i = 0
     Events.on(event) {
         lambda(it)
@@ -244,15 +238,17 @@ fun <T> next(event: Class<T>, repetitions: Int = 1, lambda: (T) -> Unit) {
     }
 }
 
-
 /** Whether we are connected to nydus */
 fun nydus() = Vars.ui.join.lastHost != null && Vars.net.client() && Vars.ui.join.lastHost.name.contains("nydus")
 
 /** Whether we are connected to a cn server */
-fun cn() = Vars.net.client() && Vars.ui.join.commmunityHosts.contains { it.group == "Chaotic Neutral" && it.address == Vars.ui.join.lastHost?.address }
+fun cn() = Vars.net.client() && Vars.ui.join.communityHosts.contains { it.group == "Chaotic Neutral" && it.address == Vars.ui.join.lastHost?.address }
 
 /** Whether we are connected to a .io server */
-fun io() = Vars.net.client() && Vars.ui.join.commmunityHosts.contains { it.group == "io" && it.address == Vars.ui.join.lastHost?.address }
+fun io() = Vars.net.client() && Vars.ui.join.communityHosts.contains { it.group == "io" && it.address == Vars.ui.join.lastHost?.address }
+
+/** Whether we are connected to a Phoenix Network server */
+fun phoenix() = Vars.net.client() && Vars.ui.join.communityHosts.contains { it.group == "Phoenix Network" && it.address == Vars.ui.join.lastHost?.address }
 
 /** Whether the current gamemode is flood */
 fun flood() = (Vars.net.client() && Vars.ui.join.lastHost?.modeName == "Flood") || Vars.state.rules.modeName == "Flood"
@@ -274,8 +270,6 @@ val ByteBuffer.byteArray get() = bytes(int)
 fun ByteBuffer.putInstantSeconds(instant: Instant) { putLong(instant.epochSecond) }
 
 val ByteBuffer.instant get() = long.toInstant()
-
-val Boolean.int get() = if (this) 1 else 0
 
 fun pixmapFromClipboard(): Pixmap? {
     try {
@@ -324,11 +318,7 @@ fun pixmapFromClipboard(): Pixmap? {
     }
 }
 
-inline fun <T : Disposable, V> T.use(lambda: T.() -> V): V {
-    val res = lambda()
-    dispose()
-    return res
-}
+inline fun <T : Disposable, V> T.use(lambda: T.() -> V) = lambda().also { this.dispose() }
 
 private val bytes = ByteArrayOutputStream()
 
@@ -404,3 +394,35 @@ fun compressImage(img: Pixmap): ByteArray {
 fun inflateImage(array: ByteArray, offset: Int, length: Int): Pixmap? {
     return try { Pixmap(array, offset, length) } catch (e: Exception) { null }
 }
+
+inline fun circle(x: Int, y: Int, radius: Float, cons: (Tile?) -> Unit) {
+    // x^2 + y^2 = r^2
+    // x = sqrt(r^2 - y^2)
+    val tr = radius / Vars.tilesize
+    val r2 = tr * tr
+    val h = 0 until Vars.world.height()
+    val w = 0 until Vars.world.width()
+    for (yo in -tr.floor()..tr.ceil()) {
+        val ty = yo + y
+        if (ty !in h) continue
+        val diff = sqrt(r2 - (yo * yo)).ceil()
+        for (tx in (x - diff)..(x + diff)) {
+            if (tx !in w) continue
+            cons(Vars.world.tiles[tx, ty])
+        }
+    }
+}
+
+/** Send a signed message to chat. */
+fun sendMessage(msg: String) = Call.sendChatMessage(Main.sign(msg))
+
+
+//inline fun <T> Seq<out T>.forEach(consumer: (T?) -> Unit) {
+//    for (i in 0 until size) consumer(items[i])
+//}
+//
+//inline fun <T> Seq<out T>.forEach(pred: (T?) -> Boolean, consumer: (T?) -> Unit) {
+//    for (i in 0 until size) {
+//        if (pred(items[i])) consumer(items[i])
+//    }
+//}

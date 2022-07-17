@@ -14,10 +14,11 @@ task run(dependsOn: classes, type: JavaExec){
     standardInput = System.in
     workingDir = project.assetsDir
     ignoreExitValue = true
+    systemProperties += System.properties
 
     if(System.getProperty("os.name").toLowerCase().contains("mac")){
-        jvmArgs("-XstartOnFirstThread")
-        args("-firstThread")
+        jvmArgs += "-XstartOnFirstThread"
+        args += "-firstThread"
     }
 
     jvmArgs += "-XX:+ShowCodeDetailsInExceptionMessages"

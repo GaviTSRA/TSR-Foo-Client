@@ -85,7 +85,11 @@ public class PlayerListFragment extends Fragment{
         players.clear();
         Groups.player.copy(players);
 
-        players.sort(Structs.comps(Structs.comparing(Player::team), Structs.comps(Structs.comparingBool(p -> !p.admin), Structs.comparingBool(p -> !(p.fooUser || p.isLocal())))));
+        var target = Spectate.INSTANCE.getPos() instanceof Player p ? p :
+            Navigation.currentlyFollowing instanceof AssistPath p && p.getAssisting() != null ? p.getAssisting() :
+            Navigation.currentlyFollowing instanceof UnAssistPath p ? p.target :
+            null;
+        players.sort(Structs.comps(Structs.comparingBool(p -> p != target), Structs.comps(Structs.comparing(Player::team), Structs.comps(Structs.comparingBool(p -> !p.admin), Structs.comparingBool(p -> !(p.fooUser || p.isLocal()))))));
         if(search.getText().length() > 0) players.filter(p -> Strings.stripColors(p.name().toLowerCase()).contains(search.getText().toLowerCase()));
 
         for(var user : players){
@@ -197,7 +201,7 @@ public class PlayerListFragment extends Fragment{
                 button.button(Icon.copy, ustyle, // Assist/copy
                         () -> Navigation.follow(new AssistPath(user, Core.input.shift(), Core.input.ctrl()))).size(h / 2).tooltip("@client.assist");
                 button.button(Icon.cancel, ustyle, // Unassist/block
-                        () -> Navigation.follow(new UnAssistPath(user))).size(h / 2).tooltip("@client.unassist");
+                        () -> Navigation.follow(new UnAssistPath(user, !Core.input.shift()))).size(h / 2).tooltip("@client.unassist");
                 button.button(Icon.move, ustyle, // Goto
                         () -> Navigation.navigateTo(user)).size(h / 2).tooltip("@client.goto");
                 button.button(Icon.zoom, ustyle, // Spectate/stalk

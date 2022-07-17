@@ -29,6 +29,7 @@ import mindustry.service.*;
 import mindustry.type.*;
 
 import java.io.*;
+import java.util.concurrent.*;
 
 import static mindustry.Vars.*;
 
@@ -44,11 +45,30 @@ public class DesktopLauncher extends ClientLauncher{
             String env = OS.hasProp("aaSamples") ? OS.prop("aaSamples") : OS.hasEnv("aaSamples") ? OS.env("aaSamples") : "";
             if (Strings.canParsePositiveInt(env)) aaSamples[0] = Math.min(Integer.parseInt(env), 32);
 
-            Version.init();
             Vars.loadLogger();
+            Version.init();
+            if (OS.hasProp("git")) { // Run with -Dgit and a git repo initialized in the data dir to sync saves between computers
+                File saves = new File(OS.hasEnv("MINDUSTRY_DATA_DIR") ? OS.env("MINDUSTRY_DATA_DIR") : Version.modifier.contains("steam") ? "saves" : OS.getAppDataDirectoryString("Mindustry"));
+                ProcessBuilder pb = new ProcessBuilder("git", "pull").directory(saves).inheritIO();
+                Log.warn("&rBegin git sync (download)");
+                pb.start().waitFor();
+                Log.warn("&rEnd git sync (download)&fr");
+                Version.init(); // reinit in case of successful pull and version change
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> { // push on game close
+                    try {
+                        Log.warn("&rBegin git sync (upload)");
+                        pb.command("git", "add", "maps", "saves", "schematics", "settings.bin", "mods", "aliases", "keys", ":!*.DS_Store").start().waitFor();
+                        pb.command("git", "commit", "-m", "Upload saves from " + OS.username + " @ " + OS.osName + " x" + OS.osArchBits + " " + OS.osArch).start().waitFor();
+                        pb.command("git", "push").start().waitFor();
+                        Log.warn("&rEnd git sync (upload)&fr");
+                    } catch (InterruptedException | IOException e) {
+                        e.printStackTrace();
+                    }
+                }, "Git Synchronization"));
+            }
 
             Events.on(EventType.ClientLoadEvent.class, e -> {
-                if (Core.app.isDesktop()) SDL.SDL_SetWindowTitle(((SdlApplication) Core.app).getWindow(), getWindowTitle());
+                if (Core.app instanceof SdlApplication) SDL.SDL_SetWindowTitle(((SdlApplication) Core.app).getWindow(), getWindowTitle());
             });
 
             if (OS.isMac && !Structs.contains(arg, "-firstThread")) { //restart with -XstartOnFirstThread on mac, doesn't work without it
@@ -112,16 +132,20 @@ public class DesktopLauncher extends ClientLauncher{
     public void startDiscord() {
         if(useDiscord){
             try{
-                DiscordRPC.connect(discordID);
-                Runtime.getRuntime().addShutdownHook(new Thread(DiscordRPC::close));
-                Log.info("Initialized Discord rich presence.");
-            }catch(NoDiscordClientException none){
-                useDiscord = false;
-                Log.debug("Not initializing Discord RPC - no discord instance open.");
-            }catch(Throwable t){
-                useDiscord = false;
-                Log.warn("Failed to initialize Discord RPC - you are likely using a JVM <16.");
-            }
+                new FutureTask<Void>(() -> {
+                    try{
+                        DiscordRPC.connect(discordID);
+                        Runtime.getRuntime().addShutdownHook(new Thread(DiscordRPC::close));
+                        Log.info("Initialized Discord rich presence.");
+                    }catch(NoDiscordClientException none){
+                        useDiscord = false;
+                        Log.debug("Not initializing Discord RPC - no discord instance open.");
+                    }catch(Throwable t){
+                        useDiscord = false;
+                        Log.warn("Failed to initialize Discord RPC - you are likely using a JVM <16.");
+                    }
+                }, null).get(500, TimeUnit.MILLISECONDS);
+            } catch (ExecutionException | InterruptedException | TimeoutException ignored) {}
         }
     }
 
@@ -380,11 +404,10 @@ public class DesktopLauncher extends ClientLauncher{
 
             presence.largeImageKey = "logo";
             presence.smallImageKey = "foo";
-            presence.smallImageText = Strings.format("TSR-Foo Client (@)", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
-            presence.startTimestamp = state.tick == 0 ? beginTime/1000 : Time.millis() - (long)(state.tick * 16.666f);
-//            presence.startTimestamp = Main.ntp.instant().getEpochSecond() - (long)state.tick/60; FINISHME: Use this instead of line above when 132 releases
+            presence.smallImageText = Strings.format("TSR-Foo's Client (@)", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
+            presence.startTimestamp = state.tick == 0 ? beginTime/1000 : Time.timeSinceMillis((long)(state.tick * 16.666));
             presence.label1 = "Client Github";
-            presence.url1 = "https://github.com/mindustry-antigrief/mindustry-client";
+            presence.url1 = "https://github.com/GaviTSRA/TSR-Foo-Client";
             if (DiscordRPC.getStatus() == DiscordRPC.PipeStatus.connected) DiscordRPC.send(presence);
         }
 

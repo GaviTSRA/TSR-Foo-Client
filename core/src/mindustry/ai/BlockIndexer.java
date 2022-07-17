@@ -6,6 +6,7 @@ import arc.math.*;
 import arc.math.geom.*;
 import arc.struct.*;
 import arc.util.*;
+import mindustry.client.*;
 import mindustry.content.*;
 import mindustry.game.EventType.*;
 import mindustry.game.*;
@@ -186,7 +187,9 @@ public class BlockIndexer{
             return damagedTiles[team.id] = new Seq<>(false);
         }
 
-        return damagedTiles[team.id];
+        var seq = damagedTiles[team.id];
+        seq.each(b -> b.wasDamaged && !b.damaged(), seq::remove);
+        return seq;
     }
 
     /** Get all allied blocks with a flag. */
@@ -422,7 +425,7 @@ public class BlockIndexer{
 
             //insert the new tile into the quadtree for targeting
             if(data.buildings == null){
-                data.buildings = new QuadTree<>(new Rect(0, 0, world.unitWidth(), world.unitHeight()));
+                data.buildings = new QuadTreeMk2<>(new Rect(0, 0, world.unitWidth(), world.unitHeight()));
             }
             data.buildings.insert(tile.build);
 
