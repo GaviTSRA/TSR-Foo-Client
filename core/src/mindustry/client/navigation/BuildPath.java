@@ -34,7 +34,7 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
     public Seq<Queue<BuildPlan>> queues = new Seq<>();
     private Seq<Item> mineItems;
     private int cap;
-    private GridBits blocked = new GridBits(world.width(), world.height()), blockedPlayer = new GridBits(world.width(), world.height());
+    private GridBits blocked = new GridBits(world.width(), world.height()), blockedPlayer = new GridBits(world.width(), world.height()), temp = new GridBits(world.width(), world.height());
     private int radius = Core.settings.getInt("defaultbuildpathradius");
     private final Vec2 origin = new Vec2(player.x, player.y);
     private final ObjectMap<Block, Block> upgrades = ObjectMap.of(
@@ -136,19 +136,25 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
 
             if (timer.get(1, 300)) {
                 clientThread.post(() -> {
-                    blocked.clear();
-                    blockedPlayer.clear();
                     synchronized (Navigation.obstacles) {
                         for (var turret : Navigation.obstacles) {
                             if (!turret.canShoot) continue;
                             Geometry.circle(World.toTile(turret.x), World.toTile(turret.y), World.toTile(turret.radius), (x, y) -> {
                                 if (Structs.inBounds(x, y, world.width(), world.height()) && turret.contains(x * tilesize, y * tilesize)) {
-                                    if (turret.targetGround) blocked.set(x, y);
-                                    if (turret.canHitPlayer) blockedPlayer.set(x, y);
+                                    if (turret.targetGround || turret.canHitPlayer) {
+                                        temp.set(x, y);
+                                        if (turret.targetGround) blocked.set(x, y);
+                                        if (turret.canHitPlayer) blockedPlayer.set(x, y);
+                                    }
+                                    if (!temp.get(x, y)) { // Unset this tile
+                                        blocked.set(x, y, false);
+                                        blockedPlayer.set(x, y, false);
+                                    }
                                 }
                             });
                         }
                     }
+                    temp.clear();
                 });
             }
 
@@ -162,7 +168,7 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
 
             if(queues.contains(assist)) {
                 Units.nearby(player.unit().team, player.unit().x, player.unit().y, Float.MAX_VALUE, unit -> {
-                    if(player.unit() != null && unit != player.unit() && unit.isBuilding()) {
+                    if(player.unit() != null && unit != player.unit() && unit.isBuilding() && unit.updateBuilding) {
                         for (BuildPlan plan : unit.plans) {
                             if (BuildPlanCommunicationSystem.INSTANCE.isNetworking(plan)) continue;
                             assist.add(plan);
@@ -192,11 +198,6 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
                     } else if (queues.contains(cleanup) && tile.isCenter() && (tile.build instanceof ConstructBlock.ConstructBuild build && !build.wasConstructing && build.lastBuilder != null && build.lastBuilder == player.unit() || tile.team() == Team.derelict && tile.breakable() && !(tile.block() instanceof Prop))) {
                         cleanup.add(pool.obtain().set(tile.x, tile.y));
 
-                    } else if (queues.contains(unfinished) && tile.team() == player.team() && tile.build instanceof ConstructBlock.ConstructBuild build && tile.isCenter()) {
-                        unfinished.add(build.wasConstructing ?
-                            pool.obtain().set(tile.x, tile.y, tile.build.rotation, build.current, tile.build.config()) :
-                            pool.obtain().set(tile.x, tile.y));
-
                     } else if ((queues.contains(belts) || queues.contains(drills)) && tile.team() == player.team() && tile.build != null && tile.isCenter()) {
                         Block block = tile.build instanceof ConstructBlock.ConstructBuild b ? b.previous : tile.block();
 
@@ -209,6 +210,11 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
                                 belts.add(pool.obtain().set(tile.x, tile.y, tile.build.rotation, upgrade));
                             }
                         }
+
+                    } else if (queues.contains(unfinished) && tile.team() == player.team() && tile.build instanceof ConstructBlock.ConstructBuild build && tile.isCenter()) {
+                        unfinished.add(build.wasConstructing ?
+                            pool.obtain().set(tile.x, tile.y, tile.build.rotation, build.current, tile.build.config()) :
+                            pool.obtain().set(tile.x, tile.y));
                     }
                 }
             }
@@ -260,7 +266,7 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
                 Formation formation = player.unit().formation;
                 range = buildingRange - player.unit().hitSize() / 2 - 32; // Range - 4 tiles
                 if (formation != null) range -= formation.pattern.radius(); // Account for the player formation
-                goTo(req, range);
+                goTo(req.tile(), range); // Cannot go directly to req as it is pooled so the build changes.
             }else{
                 //discard invalid request
                 player.unit().plans.removeFirst();
