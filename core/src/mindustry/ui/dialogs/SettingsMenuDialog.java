@@ -24,6 +24,7 @@ import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.input.*;
+import mindustry.tsr.handlers.RandomProfileManager;
 import mindustry.tsr.ui.AdvancedSettingsTable;
 import mindustry.tsr.ui.ProfileManagerDialog;
 import mindustry.ui.*;
@@ -369,6 +370,7 @@ public class SettingsMenuDialog extends SettingsDialog{
         tsr_client.category("clientsettings");
         tsr_client.checkPref("runclientsidejs", false);
         tsr_client.checkPref("showallblocks", false);
+        tsr_client.checkPref("alwaysshowshield", false);
         tsr_client.addButton("resetupdateurl", () -> {
             String _name = "updateurl";
             becontrol.setUpdateAvailable(false);
@@ -382,6 +384,11 @@ public class SettingsMenuDialog extends SettingsDialog{
                 }
             });
         });
+        tsr_client.addButton("manageprofiles", () -> {
+            ui.profileManagerDialog = new ProfileManagerDialog();
+            ui.profileManagerDialog.show();
+        });
+        tsr_client.addButton("randomprofile", RandomProfileManager::useRandomProfile);
         //tsr_client.textPref("profiles", "");
 
         game.screenshakePref();

@@ -483,6 +483,10 @@ public class UnitType extends UnlockableContent{
 
         if(unit.shieldAlpha > 0 && drawShields){
             drawShield(unit);
+        } else if(Core.settings.getBool("alwaysshowshield")) {
+            if (unit.shield > 0) {
+                drawShield(unit);
+            }
         }
 
         if(mech != null){
@@ -508,8 +512,8 @@ public class UnitType extends UnlockableContent{
     }
 
     public void drawShield(Unit unit){
-        float radius = unit.hitSize() * 1.3f;
-        Fill.light(unit.x, unit.y, Lines.circleVertices(radius), radius, Tmp.c1.set(Pal.shieldIn), Tmp.c2.set(Pal.shield).lerp(Color.white, Mathf.clamp(unit.hitTime() / 2f)).a(Pal.shield.a * unit.shieldAlpha() * alpha));
+        float radius = unit.hitSize() * (Core.settings.getBool("alwaysshowshield") ? 1.5f : 1.3f);
+        Fill.light(unit.x, unit.y, Lines.circleVertices(radius), radius, Tmp.c1.set(Pal.shieldIn), Tmp.c2.set(Pal.shield).lerp(Color.white, Mathf.clamp(unit.hitTime() / 2f)).a(Pal.shield.a * unit.shieldAlpha() * alpha+1));
     }
 
     public void drawControl(Unit unit){

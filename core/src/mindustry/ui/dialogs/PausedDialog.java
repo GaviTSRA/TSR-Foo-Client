@@ -1,15 +1,14 @@
 package mindustry.ui.dialogs;
 
-import arc.*;
-import arc.math.Rand;
-import arc.util.serialization.Base64Coder;
-import mindustry.client.*;
-import mindustry.client.ui.*;
-import mindustry.gen.*;
+import arc.Core;
+import mindustry.client.Main;
+import mindustry.client.ui.ChangelogDialog;
+import mindustry.client.ui.FeaturesDialog;
+import mindustry.client.ui.KeyShareDialog;
+import mindustry.gen.Icon;
+import mindustry.tsr.handlers.RandomProfileManager;
 import mindustry.tsr.handlers.ReconnectHandler;
 import mindustry.tsr.ui.ProfileManagerDialog;
-
-import java.util.Random;
 
 import static mindustry.Vars.*;
 
@@ -75,21 +74,7 @@ public class PausedDialog extends BaseDialog{
                 ui.profileManagerDialog = new ProfileManagerDialog();
                 ui.profileManagerDialog.show();
             });
-            cont.button("@tsr.profile.random", Icon.refresh, () -> {
-                String newUUID;
-                byte[] result = new byte[8];
-                new Rand().nextBytes(result);
-                newUUID = new String(Base64Coder.encode(result));
-                Core.settings.put("uuid", newUUID);
-
-                String newName;
-                String[] nameParts1 = {"Luk", "Random", "Name", "Freeeeee", "|Yes|", "BBBB", "I am ", "cl", "Anifan", "MAIf", "anf"};
-                String[] nameParts2 = {".org", "in", "or", "chuck", "-1", "|Why|", "AAAA", " - the only one", "as", "rooter", "dead"};
-                newName = nameParts1[new Random().nextInt(nameParts1.length)];
-                newName += nameParts2[new Random().nextInt(nameParts2.length)];
-                Core.settings.put("name", newName);
-                Call.infoMessage("Assigned random profile");
-            });
+            cont.button("@tsr.profile.random", Icon.refresh, RandomProfileManager::useRandomProfile);
 
             cont.row();
 

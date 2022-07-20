@@ -5,6 +5,7 @@ import arc.func.*;
 import arc.graphics.*;
 import arc.math.*;
 import arc.math.geom.*;
+import arc.scene.ui.Dialog;
 import arc.struct.*;
 import arc.util.*;
 import arc.util.CommandHandler.*;
@@ -20,11 +21,15 @@ import mindustry.entities.units.*;
 import mindustry.game.EventType.*;
 import mindustry.game.*;
 import mindustry.gen.*;
+import mindustry.graphics.Pal;
 import mindustry.net.Administration.*;
 import mindustry.net.Net.*;
 import mindustry.net.*;
 import mindustry.net.Packets.*;
 import mindustry.tsr.handlers.ClientSideJSCommandHandler;
+import mindustry.tsr.handlers.RandomProfileManager;
+import mindustry.tsr.handlers.ReconnectHandler;
+import mindustry.tsr.ui.ProfileManagerDialog;
 import mindustry.ui.*;
 import mindustry.world.*;
 import mindustry.world.modules.*;
@@ -128,12 +133,12 @@ public class NetClient implements ApplicationListener{
 
             if(packet.reason != null){
                 switch(packet.reason){
-                    case "closed" -> ui.showSmall("@disconnect", "@disconnect.closed");
-                    case "timeout" -> ui.showSmall("@disconnect", "@disconnect.timeout");
-                    case "error" -> ui.showSmall("@disconnect", "@disconnect.error");
+                    case "closed" -> showSmall("@disconnect.closed");
+                    case "timeout" -> showSmall("@disconnect.timeout");
+                    case "error" -> showSmall("@disconnect.error");
                 }
             }else{
-                ui.showErrorMessage("@disconnect");
+                showSmall("@disconnect");
             }
         });
 
@@ -147,6 +152,22 @@ public class NetClient implements ApplicationListener{
         net.handleClient(InvokePacket.class, packet -> {
             RemoteReadClient.readPacket(packet.reader(), packet.type);
         });
+    }
+
+    private void showSmall(String text){
+        new Dialog("@disconnect"){{
+            cont.margin(10).add(text);
+            titleTable.row();
+            titleTable.image().color(Pal.accent).height(3f).growX().pad(2f);
+            buttons.button("@tsr.reconnect", ReconnectHandler::reconnect).size(150, 70).pad(4);
+            buttons.button("@tsr.profiles.manage", () -> {
+                ui.profileManagerDialog = new ProfileManagerDialog();
+                ui.profileManagerDialog.show();
+            }).size(150, 70).pad(4);
+            buttons.button("@tsr.profile.random", RandomProfileManager::useRandomProfile).size(150, 70).pad(4);
+            buttons.button("@ok", this::hide).size(150, 70).pad(4);
+            closeOnBack();
+        }}.show();
     }
 
     public void addPacketHandler(String type, Cons<String> handler){
@@ -327,19 +348,38 @@ public class NetClient implements ApplicationListener{
 
         if(!reason.quiet){
             if(reason.extraText() != null){
-                ui.showText(reason.toString(), reason.extraText());
+                showSmall(reason.toString(), reason.extraText());
+                //ui.showText(reason.toString(), reason.extraText());
             }else{
-                ui.showText("@disconnect", reason.toString());
+                showSmall("@disconnect", reason.toString());
+		//ui.showText("@disconnect", reason.toString());
             }
         }
         ui.loadfrag.hide();
+    }
+
+    private static void showSmall(String title, String text){
+        new Dialog(title){{
+            cont.margin(10).add(text);
+            titleTable.row();
+            titleTable.image().color(Pal.accent).height(3f).growX().pad(2f);
+            buttons.button("@tsr.reconnect", ReconnectHandler::reconnect).size(150, 70).pad(4);
+            buttons.button("@tsr.profiles.manage", () -> {
+                ui.profileManagerDialog = new ProfileManagerDialog();
+                ui.profileManagerDialog.show();
+            }).size(150, 70).pad(4);
+            buttons.button("@tsr.profile.random", RandomProfileManager::useRandomProfile).size(150, 70).pad(4);
+            buttons.button("@ok", this::hide).size(150, 70).pad(4);
+            closeOnBack();
+        }}.show();
     }
 
     @Remote(variants = Variant.one, priority = PacketPriority.high)
     public static void kick(String reason){
         netClient.disconnectQuietly();
         logic.reset();
-        ui.showText("@disconnect", reason, Align.left);
+        showSmall("@disconnect", reason);
+        //ui.showText("@disconnect", reason, Align.left);
         ui.loadfrag.hide();
     }
 
@@ -581,7 +621,8 @@ public class NetClient implements ApplicationListener{
                 Log.err("Failed to load data!");
                 ui.loadfrag.hide();
                 quiet = true;
-                ui.showErrorMessage("@disconnect.data");
+                showSmall("@disconnect.data");
+                //ui.showErrorMessage("@disconnect.data");
                 net.disconnect();
                 timeoutTime = 0f;
             }
