@@ -1,11 +1,12 @@
 # Join the discord in the client tab on the main menu to stay up to date on new stuff.
 
-# The client now officially supports v7, download the v7 client at https://kik.to/foo-v7
+# Version 2.1.2-TSR
+ * Added reconnect, manage profiles and random profile buttons to more disconnected dialogues
 
 # Version 2.1.0-TSR
  * New settings: Always show shields
  * Better implementation for setting: Show hidden block
-    * Now shows all block, including floors
+    * Now shows all blocks, including floors
  * Added reconnect, manage profiles and random profile button to disconnect screen
  * Added manage profiles and random profile button to settings
 

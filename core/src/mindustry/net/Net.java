@@ -6,9 +6,14 @@ import arc.net.*;
 import arc.struct.*;
 import arc.util.*;
 import arc.util.pooling.*;
+import arc.scene.ui.Dialog;
 import mindustry.gen.*;
+import mindustry.graphics.Pal;
 import mindustry.net.Packets.*;
 import mindustry.net.Streamable.*;
+import mindustry.tsr.handlers.RandomProfileManager;
+import mindustry.tsr.handlers.ReconnectHandler;
+import mindustry.tsr.ui.ProfileManagerDialog;
 import net.jpountz.lz4.*;
 
 import java.io.*;
@@ -81,9 +86,11 @@ public class Net{
             }
 
             if(isError){
-                ui.showException("@error.any", e);
+                //ui.showException("@error.any", e);
+                showSmall("@error.any", e.toString());
             }else{
-                ui.showText("", Core.bundle.format("connectfail", error));
+                //ui.showText("", Core.bundle.format("connectfail", error));
+                showSmall("", Core.bundle.format("connectfail", error));
             }
             ui.loadfrag.hide();
 
@@ -94,6 +101,23 @@ public class Net{
 
         Log.err(e);
     }
+
+    private static void showSmall(String title, String text){
+        System.out.println("Showing ddeisnc");
+        new Dialog(title){{
+            cont.margin(10).add(text);
+            titleTable.row();
+            titleTable.image().color(Pal.accent).height(3f).growX().pad(2f);
+            buttons.button("@tsr.reconnect", ReconnectHandler::reconnect).size(150, 70).pad(4);
+            buttons.button("@tsr.profiles.manage", () -> {
+                ui.profileManagerDialog = new ProfileManagerDialog();
+                ui.profileManagerDialog.show();
+            }).size(150, 70).pad(4);
+            buttons.button("@tsr.profile.random", RandomProfileManager::useRandomProfile).size(150, 70).pad(4);
+            buttons.button("@ok", this::hide).size(150, 70).pad(4);
+            closeOnBack();
+        }}.show();
+    }	
 
     /**
      * Sets the client loaded status, or whether it will receive normal packets from the server.
