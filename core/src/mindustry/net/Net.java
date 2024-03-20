@@ -5,8 +5,8 @@ import arc.func.*;
 import arc.net.*;
 import arc.struct.*;
 import arc.util.*;
-import arc.util.async.*;
-import mindustry.client.*;
+import mindustry.game.*;
+import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.net.Packets.*;
 import mindustry.net.Streamable.*;
@@ -22,9 +22,9 @@ import static mindustry.Vars.*;
 
 @SuppressWarnings("unchecked")
 public class Net{
-    private static Seq<Prov<? extends Packet>> packetProvs = new Seq<>();
-    private static Seq<Class<? extends Packet>> packetClasses = new Seq<>();
-    private static ObjectIntMap<Class<?>> packetToId = new ObjectIntMap<>();
+    private static final Seq<Prov<? extends Packet>> packetProvs = new Seq<>();
+    private static final Seq<Class<? extends Packet>> packetClasses = new Seq<>();
+    private static final ObjectIntMap<Class<?>> packetToId = new ObjectIntMap<>();
 
     private boolean server;
     private boolean active;
@@ -35,7 +35,7 @@ public class Net{
     private final ObjectMap<Class<?>, Cons> clientListeners = new ObjectMap<>();
     private final ObjectMap<Class<?>, Cons2<NetConnection, Object>> serverListeners = new ObjectMap<>();
     private final IntMap<StreamBuilder> streams = new IntMap<>();
-    private final ExecutorService pingExecutor = Threads.cachedExecutor();
+    public ExecutorService pingExecutor;
 
     private final NetProvider provider;
 
@@ -99,7 +99,7 @@ public class Net{
 
             if(e instanceof BufferUnderflowException || e instanceof BufferOverflowException || e.getCause() instanceof EOFException){
                 error = Core.bundle.get("error.io");
-            }else if(error.equals("mismatch") || e instanceof LZ4Exception || (e instanceof IndexOutOfBoundsException && e.getStackTrace()[0].getClassName().contains("java.nio"))){
+            }else if(error.equals("mismatch") || e instanceof LZ4Exception || (e instanceof IndexOutOfBoundsException && e.getStackTrace().length > 0 && e.getStackTrace()[0].getClassName().contains("java.nio"))){
                 error = Core.bundle.get("error.mismatch");
             }else if(error.contains("port out of range") || error.contains("invalid argument") || (error.contains("invalid") && error.contains("address")) || Strings.neatError(e).contains("address associated")){
                 error = Core.bundle.get("error.invalidaddress");
@@ -142,7 +142,7 @@ public class Net{
             }
         }
         //clear inbound packet queue
-        packetQueue.clear();
+        packetQueue.clear().shrink();
     }
 
     public void setClientConnected(){
@@ -156,8 +156,7 @@ public class Net{
     public void connect(String ip, int port, Runnable success){
         try{
             if(!active){
-                Core.settings.put("currentserverip", ip);
-                Core.settings.put("currentserverport", port);
+                Events.fire(new ClientServerConnectEvent(ip, port));
                 provider.connectClient(ip, port, success);
                 active = true;
                 server = false;
@@ -201,8 +200,7 @@ public class Net{
     public void disconnect(){
         if(active && !server){
             Log.info("Disconnecting.");
-            ClientVars.syncing = false; // Never syncing when not connected
-            ui.join.lastHost = null; // Not needed unless connected
+            Events.fire(new EventType.MenuReturnEvent());
         }
         provider.disconnectClient();
         server = false;
@@ -331,8 +329,13 @@ public class Net{
 
     /**
      * Pings a host in a pooled thread. If an error occurred, failed() should be called with the exception.
+     * If the port is the default mindustry port, SRV records are checked too.
      */
     public void pingHost(String address, int port, Cons<Host> valid, Cons<Exception> failed){
+        if(pingExecutor == null) {
+            int threads = Core.settings.getInt("pingexecutorthreads");
+            pingExecutor = Threads.cachedExecutor("Server Pings", threads > 100 ? Integer.MAX_VALUE : threads);
+        }
         pingExecutor.submit(() -> provider.pingHost(address, port, valid, failed));
     }
 
@@ -381,7 +384,10 @@ public class Net{
          */
         void discoverServers(Cons<Host> callback, Runnable done);
 
-        /** Ping a host. If an error occurred, failed() should be called with the exception. This method should block. */
+        /**
+         * Ping a host. If an error occurred, failed() should be called with the exception. This method should block.
+         * If the port is the default mindustry port (6567), SRV records are checked too.
+         */
         void pingHost(String address, int port, Cons<Host> valid, Cons<Exception> failed);
 
         /** Host a server at specified port. */
@@ -398,6 +404,8 @@ public class Net{
             disconnectClient();
             closeServer();
         }
-    }
 
+        /** Sets a connection filter by IP address. If the filter returns {@code false}, the connection will be closed. */
+        default void setConnectFilter(Server.ServerConnectFilter connectFilter){}
+    }
 }

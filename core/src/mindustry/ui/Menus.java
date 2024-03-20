@@ -14,11 +14,18 @@ import static mindustry.Vars.*;
 /** Class for handling menus and notifications across the network. Unstable API! */
 public class Menus{
     private static final Seq<MenuListener> menuListeners = new Seq<>();
+    private static final Seq<TextInputListener> textInputListeners = new Seq<>();
 
     /** Register a *global* menu listener. If no option is chosen, the option is returned as -1. */
     public static int registerMenu(MenuListener listener){
         menuListeners.add(listener);
         return menuListeners.size - 1;
+    }
+
+    /** Register a *global* text input listener. If no text is provided, the text is returned as null. */
+    public static int registerTextInput(TextInputListener listener){
+        textInputListeners.add(listener);
+        return textInputListeners.size - 1;
     }
 
     //do not invoke any of the methods below directly, use Call
@@ -27,11 +34,29 @@ public class Menus{
     public static void menu(int menuId, String title, String message, String[][] options){
         if(title == null) title = "";
         if(options == null) options = new String[0][0];
-        if(options[0][0].contains("") && options[0][1].contains("")) return; // .io is annoying
-        if(title.contains("Rate this map!") && options[0][0].contains("Yes") && options[0][1].contains("No") && ClientUtilsKt.phoenix()) return; // phoenix network is equally annoying
+        if(options.length > 0 && options[0].length > 1 && options[0][0].contains("") && options[0][1].contains("")) return; // .io is annoying
+        if(title.contains("Rate this map") && // FINISHME: Migrate this "adblock" stuff to ServerUtils
+            (options[0][0].contains("Yes") && options[0][1].contains("No") && Server.phoenix.b() ||
+            options[0][0].contains("Downvote") && options[1][0].contains("Upvote") && Server.cn.b())) return; // phoenix network and cn are equally annoying
+        if(title.contains("Basic Info and Rules") && Server.fish.b()) return; // fish is equally annoying (though this is a join popup, not a vote prompt)
 
-        Log.debug("Displaying menu " + menuId + " with title: " + title);
+        Log.debug("Displaying menu @ with title: @", menuId, title);
         ui.showMenu(title, message, options, (option) -> Call.menuChoose(player, menuId, option));
+    }
+
+    @Remote(variants = Variant.both)
+    public static void followUpMenu(int menuId, String title, String message, String[][] options){
+        if(title == null) title = "";
+        if(options == null) options = new String[0][0];
+        if(title.equals("Hello there") && Server.cn.b()) return; // Cn join popup
+
+        Log.debug("Displaying followup menu @ with title: @", menuId, title);
+        ui.showFollowUpMenu(menuId, title, message, options, (option) -> Call.menuChoose(player, menuId, option));
+    }
+
+    @Remote(variants = Variant.both)
+    public static void hideFollowUpMenu(int menuId) {
+        ui.hideFollowUpMenu(menuId);
     }
 
     @Remote(targets = Loc.both, called = Loc.both)
@@ -40,6 +65,27 @@ public class Menus{
             Events.fire(new MenuOptionChooseEvent(player, menuId, option));
             if(menuId >= 0 && menuId < menuListeners.size){
                 menuListeners.get(menuId).get(player, option);
+            }
+        }
+    }
+
+    @Remote(variants = Variant.both)
+    public static void textInput(int textInputId, String title, String message, int textLength, String def, boolean numeric){
+        if(title == null) title = "";
+
+        ui.showTextInput(title, message, textLength, def, numeric, (text) -> {
+            Call.textInputResult(player, textInputId, text);
+        }, () -> {
+            Call.textInputResult(player, textInputId, null);
+        });
+    }
+
+    @Remote(targets = Loc.both, called = Loc.both)
+    public static void textInputResult(@Nullable Player player, int textInputId, @Nullable String text){
+        if(player != null){
+            Events.fire(new TextInputEvent(player, textInputId, text));
+            if(textInputId >= 0 && textInputId < textInputListeners.size){
+                textInputListeners.get(textInputId).get(player, text);
             }
         }
     }
@@ -72,7 +118,7 @@ public class Menus{
     @Remote(variants = Variant.both)
     public static void infoMessage(String message){
         if(message == null) return;
-        if((ClientUtilsKt.io() || ClientUtilsKt.phoenix()) && Time.timeSinceMillis(ClientVars.lastJoinTime) < 1000) return;
+        if((Server.io.b() || Server.phoenix.b()) && Time.timeSinceMillis(ClientVars.lastJoinTime) < 1000) return;
 
         ui.showText("", message);
     }
@@ -106,15 +152,23 @@ public class Menus{
     @Remote(variants = Variant.both)
     public static void infoToast(String message, float duration){
         if(message == null) return;
-
+        if(!Core.settings.getBool("showtoasts")) return; // .io admins are known to abuse this
         ui.showInfoToast(message, duration);
     }
 
     @Remote(variants = Variant.both)
     public static void warningToast(int unicode, String text){
         if(text == null || Fonts.icon.getData().getGlyph((char)unicode) == null) return;
+        if(!Core.settings.getBool("showtoasts")) return;
 
         ui.hudfrag.showToast(Fonts.getGlyph(Fonts.icon, (char)unicode), text);
+    }
+
+    @Remote(variants = Variant.both)
+    public static void openURI(String uri){
+        if(uri == null) return;
+
+        ui.showConfirm(Core.bundle.format("linkopen", uri), () -> Core.app.openURI(uri));
     }
 
     //internal use only
@@ -128,5 +182,9 @@ public class Menus{
 
     public interface MenuListener{
         void get(Player player, int option);
+    }
+
+    public interface TextInputListener{
+        void get(Player player, @Nullable String text);
     }
 }

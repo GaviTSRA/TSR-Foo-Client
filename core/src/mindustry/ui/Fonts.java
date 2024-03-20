@@ -29,9 +29,9 @@ import java.util.*;
 public class Fonts{
     private static final String mainFont = "fonts/font.woff";
     private static final ObjectSet<String> unscaled = ObjectSet.with("iconLarge");
-    private static ObjectIntMap<String> unicodeIcons = new ObjectIntMap<>();
-    public static ObjectMap<String, String> stringIcons = new ObjectMap<>();
-    private static ObjectMap<String, TextureRegion> largeIcons = new ObjectMap<>();
+    private static final ObjectIntMap<String> unicodeIcons = new ObjectIntMap<>();
+    public static final ObjectMap<String, String> stringIcons = new ObjectMap<>();
+    private static final ObjectMap<String, TextureRegion> largeIcons = new ObjectMap<>();
     private static TextureRegion[] iconTable;
     private static int lastCid;
 
@@ -40,16 +40,6 @@ public class Fonts{
     public static Font icon;
     public static Font iconLarge;
     public static Font tech;
-    private static Font mono;
-    private static Font monoOutline;
-
-    public static Font mono(){
-        return Core.settings.getBool("disablemonofont") ? def : mono;
-    }
-
-    public static Font monoOutline(){
-        return Core.settings.getBool("disablemonofont") ? outline : monoOutline;
-    }
 
     public static TextureRegion logicIcon(int id){
         return iconTable[id];
@@ -85,12 +75,6 @@ public class Fonts{
         FreeTypeFontParameter param = fontParameter();
 
         Core.assets.load("default", Font.class, new FreeTypeFontLoaderParameter(mainFont, param)).loaded = f -> (Fonts.def = f).setFixedWidthGlyphs("0123456789");
-        Core.assets.load("mono", Font.class, new FreeTypeFontLoaderParameter("fonts/monofont.ttf", param)).loaded = f -> {
-            StringBuilder chars = new StringBuilder();
-            for(int c = 0; c <= 255; c++) chars.append((char)c);
-            (Fonts.mono = f).setFixedWidthGlyphs(chars);
-            mono.getData().markupEnabled = true;
-        };
         Core.assets.load("icon", Font.class, new FreeTypeFontLoaderParameter("fonts/icon.ttf", new FreeTypeFontParameter(){{
             size = 30;
             incremental = true;
@@ -118,7 +102,8 @@ public class Fonts{
     }
 
     public static void loadContentIcons(){
-        Seq<Font> fonts = Seq.with(Fonts.def, Fonts.outline, Fonts.mono, Fonts.monoOutline);
+        var start = Time.nanos();
+        Seq<FontData> fontsData = Seq.with(Fonts.def, Fonts.outline).map(Font::getData);
         Texture uitex = Core.atlas.find("logo").texture;
         int size = (int)(Fonts.def.getData().lineHeight/Fonts.def.getData().scaleY);
 
@@ -138,12 +123,14 @@ public class Fonts{
                 unicodeIcons.put(nametex[0], ch);
                 stringIcons.put(nametex[0], ((char)ch) + "");
 
+                Vec2 out = Scaling.fit.apply(region.width, region.height, size, size);
+
                 Glyph glyph = new Glyph();
                 glyph.id = ch;
                 glyph.srcX = 0;
                 glyph.srcY = 0;
-                glyph.width = size;
-                glyph.height = (int)((float)region.height / region.width * size);
+                glyph.width = (int)out.x;
+                glyph.height = (int)out.y;
                 glyph.u = region.u;
                 glyph.v = region.v2;
                 glyph.u2 = region.u2;
@@ -154,9 +141,11 @@ public class Fonts{
                 glyph.kerning = null;
                 glyph.fixedWidth = true;
                 glyph.page = 0;
-                fonts.each(f -> f.getData().setGlyph(ch, glyph));
+                fontsData.each(f -> f.setGlyph(ch, glyph));
             }
         }
+
+        stringIcons.put("alphachan", stringIcons.get("alphaaaa"));
 
         iconTable = new TextureRegion[512];
         iconTable[0] = Core.atlas.find("error");
@@ -172,17 +161,45 @@ public class Fonts{
         });
 
         for(Team team : Team.baseTeams){
-            if(Core.atlas.has("team-" + team.name)){
-                team.emoji = stringIcons.get(team.name, "");
+            team.emoji = stringIcons.get(team.name, "");
+        }
+    }
+    
+    public static void loadContentIconsHeadless(){
+        try(Scanner scan = new Scanner(Core.files.internal("icons/icons.properties").read(512))){
+            while(scan.hasNextLine()){
+                String line = scan.nextLine();
+                String[] split = line.split("=");
+                String[] nametex = split[1].split("\\|");
+                String character = split[0];
+                int ch = Integer.parseInt(character);
+
+                unicodeIcons.put(nametex[0], ch);
+                stringIcons.put(nametex[0], ((char)ch) + "");
             }
         }
+
+        stringIcons.put("alphachan", stringIcons.get("alphaaaa"));
+
+        for(Team team : Team.baseTeams){
+            team.emoji = stringIcons.get(team.name, "");
+        }
+
+    }
+
+    public static TextureFilter getTextFilter(boolean linear){ //TODO: separate into min and max filter
+        return linear ? TextureFilter.linear : TextureFilter.nearest;
+    }
+
+    public static TextureFilter getTextFilter(){
+        return getTextFilter(Core.settings.getBool("lineartext", Core.settings.getBool("linear")));
     }
 
     /** Called from a static context for use in the loading screen.*/
     public static void loadDefaultFont(){
         int max = Gl.getInt(Gl.maxTextureSize);
 
-        UI.packer = new PixmapPacker(max >= 4096 ? 4096 : 2048, 2048, 2, true);
+        UI.packer = new PixmapPacker(max >= 4096 ? 4096 : 2048, max >= 4096 ? 4096 : 2048, 2, true);
         Core.assets.setLoader(FreeTypeFontGenerator.class, new FreeTypeFontGeneratorLoader(Core.files::internal));
         Core.assets.setLoader(Font.class, null, new FreetypeFontLoader(Core.files::internal){
             ObjectSet<FreeTypeFontParameter> scaled = new ObjectSet<>();
@@ -199,8 +216,8 @@ public class Fonts{
                     scaled.add(parameter.fontParameters);
                 }
 
-                parameter.fontParameters.magFilter = TextureFilter.linear;
-                parameter.fontParameters.minFilter = TextureFilter.linear;
+                parameter.fontParameters.magFilter = getTextFilter();
+                parameter.fontParameters.minFilter = getTextFilter();
                 parameter.fontParameters.packer = UI.packer;
                 return super.loadSync(manager, fileName, file, parameter);
             }
@@ -216,17 +233,13 @@ public class Fonts{
             Fonts.outline = t;
             Fonts.outline.setFixedWidthGlyphs("0123456789");
         };
-        Core.assets.load("monoOutline", Font.class, new FreeTypeFontLoaderParameter("fonts/monofont.ttf", param)).loaded = f -> {
-            StringBuilder chars = new StringBuilder();
-            for(int c = 0; c <= 255; c++) chars.append((char)c);
-            (Fonts.monoOutline = f).setFixedWidthGlyphs(chars);
-            monoOutline.getData().markupEnabled = true;
-        };
+
         Core.assets.load("tech", Font.class, new FreeTypeFontLoaderParameter("fonts/tech.ttf", new FreeTypeFontParameter(){{
             size = 18;
         }})).loaded = f -> {
-            Fonts.tech = f;
-            Fonts.tech.getData().down *= 1.5f;
+            tech = f;
+            tech.getData().down *= 1.5f;
+            tech.getData().markupEnabled = true;
         };
     }
 
@@ -293,7 +306,7 @@ public class Fonts{
                 cy = (int)cy;
                 originX = g.width/2f;
                 originY = g.height/2f;
-                Draw.rect(region, cx + g.width/2f, cy + g.height/2f, g.width, g.height, originX, originY, rotation);
+                Draw.rect(region, cx + g.width/2f, cy + g.height/2f, g.width * scaleX, g.height * scaleY, originX, originY, rotation);
             }
 
             @Override
@@ -313,6 +326,7 @@ public class Fonts{
             shadowColor = Color.darkGray;
             shadowOffsetY = 2;
             incremental = true;
+            magFilter = minFilter = getTextFilter();
         }};
     }
 }

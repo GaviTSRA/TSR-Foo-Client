@@ -1,5 +1,6 @@
 package mindustry.net;
 
+import arc.*;
 import arc.struct.*;
 import arc.util.*;
 import mindustry.entities.units.*;
@@ -22,16 +23,27 @@ public abstract class NetConnection{
     public long connectTime = Time.millis();
     /** ID of last received client snapshot. */
     public int lastReceivedClientSnapshot = -1;
+    /** Count of snapshots sent from server. */
+    public int snapshotsSent;
     /** Timestamp of last received snapshot. */
     public long lastReceivedClientTime;
     /** Build requests that have been recently rejected. This is cleared every snapshot. */
     public Seq<BuildPlan> rejectedRequests = new Seq<>();
+    /** Handles chat spam rate limits. */
+    public Ratekeeper chatRate = new Ratekeeper();
+    /** Handles packet spam rate limits. */
+    public Ratekeeper packetRate = new Ratekeeper();
 
     public boolean hasConnected, hasBegunConnecting, hasDisconnected;
     public float viewWidth, viewHeight, viewX, viewY;
 
     public NetConnection(String address){
         this.address = address;
+    }
+
+    /** Kick with the standard kick reason. */
+    public void kick(){
+        kick(KickReason.kick);
     }
 
     /** Kick with a special, localized reason. Use this if possible. */
@@ -55,7 +67,7 @@ public abstract class NetConnection{
     }
 
     /** Kick with an arbitrary reason, and a kick duration in milliseconds. */
-    private void kick(String reason, KickReason kickType, long kickDuration){
+    private void kick(String reason, @Nullable KickReason kickType, long kickDuration){
         if(kicked) return;
 
         Log.info("Kicking connection @ / @; Reason: @", address, uuid, reason == null ? kickType.name() : reason.replace("\n", " "));
@@ -70,7 +82,12 @@ public abstract class NetConnection{
             Call.kick(this, reason);
         }
 
-        close();
+        if(uuid.startsWith("steam:")){
+            //run with a 2-frame delay so there is time to send the kick packet, steam handles this weirdly
+            Core.app.post(() -> Core.app.post(this::close));
+        }else{
+            close();
+        }
 
         netServer.admins.save();
         kicked = true;

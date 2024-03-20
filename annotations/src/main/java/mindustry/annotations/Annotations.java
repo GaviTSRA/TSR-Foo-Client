@@ -34,6 +34,14 @@ public class Annotations{
 
     }
 
+    /** Indicates that a field should not be synced to clients (but may still be non-transient) */
+    @Target({ElementType.FIELD})
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface NoSync{
+
+    }
+
+
     /** Indicates that a component field is imported from other components. This means it doesn't actually exist. */
     @Target({ElementType.FIELD})
     @Retention(RetentionPolicy.SOURCE)
@@ -245,6 +253,9 @@ public class Annotations{
 
         /** Priority of this event. */
         PacketPriority priority() default PacketPriority.normal;
+
+        /** Whether this packet contributes to the default action rate limit */
+        boolean ratelimited() default false;
     }
 
     @Target(ElementType.TYPE)

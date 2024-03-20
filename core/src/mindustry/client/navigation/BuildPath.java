@@ -6,7 +6,6 @@ import arc.math.geom.*;
 import arc.struct.*;
 import arc.util.*;
 import arc.util.pooling.*;
-import mindustry.ai.formations.*;
 import mindustry.client.*;
 import mindustry.client.antigrief.*;
 import mindustry.client.communication.*;
@@ -23,7 +22,6 @@ import mindustry.world.blocks.environment.*;
 import mindustry.world.blocks.logic.*;
 
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.*;
 
 import static mindustry.Vars.*;
 
@@ -37,47 +35,53 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
     private GridBits blocked = new GridBits(world.width(), world.height()), blockedPlayer = new GridBits(world.width(), world.height()), temp = new GridBits(world.width(), world.height());
     private int radius = Core.settings.getInt("defaultbuildpathradius");
     private final Vec2 origin = new Vec2(player.x, player.y);
-    private final ObjectMap<Block, Block> upgrades = ObjectMap.of(
+    public static final ObjectMap<Block, Block> upgrades = ObjectMap.of(
         Blocks.conveyor, Blocks.titaniumConveyor,
         Blocks.conduit, Blocks.pulseConduit,
         Blocks.mechanicalDrill, Blocks.pneumaticDrill
     );
     private BuildPlan req;
     private boolean valid;
-    private final Pool<BuildPlan> pool = Pools.get(BuildPlan.class, BuildPlan::new);
-    private final PQueue<BuildPlan> priority = new PQueue<>(300, Structs.comps(Structs.comparingBool(plan -> plan.block != null && player.unit().shouldSkip(plan, player.core())), Structs.comparingFloat(plan -> plan.dst(player))));
-    private final AtomicBoolean isBlocked = new AtomicBoolean(false);
-    private final Seq<BuildPlan> freed = new Seq<>();
+    private final Pool<BuildPlan> pool = Pools.get(BuildPlan.class, BuildPlan::new, 15_000); // This is cursed but
+    private final Seq<BuildPlan> priority = new Seq<>(301);
     private CompletableFuture<Void> job = null;
+
+    public static int maxPlans = 300, delay = 15;
 
     static {
         Events.on(EventType.WorldLoadEvent.class, e -> { // Account for changing world sizes
             if (Navigation.currentlyFollowing instanceof BuildPath bp) {
                 bp.blocked = new GridBits(world.width(), world.height());
                 bp.blockedPlayer = new GridBits(world.width(), world.height());
+                bp.temp = new GridBits(world.width(), world.height());
             }
         });
     }
 
     {
-        addListener(pool::clear); // Remove the unneeded items on path end
+        addListener(() -> {
+            pool.clear(); // Remove the unneeded items on path end
+            if (Core.input.shift()) clearQueues();
+        });
     }
 
     public BuildPath() {
         this("");
     }
 
-    @SuppressWarnings("unchecked")
     public BuildPath(Seq<Item> mineItems, int cap) {
         init(Core.settings.getString("defaultbuildpathargs"));
         this.mineItems = mineItems;
         this.cap = cap;
     }
 
-    @SuppressWarnings("unchecked")
     public BuildPath(String args) {
         if (!args.trim().isEmpty()) init(args); // Init with provided args
         else init(Core.settings.getString("defaultbuildpathargs")); // No args provided, use default
+    }
+    
+    public static BuildPath Self() {
+        return new BuildPath("self");
     }
 
     private void init(String args) {
@@ -124,20 +128,19 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
     public void clearQueues() {
         for (var queue : queues) {
             for (var plan : queue) {
-                if (queue == networkAssist && !plan.isDone()) continue;
+                if (queue == networkAssist && !plan.isDone() || plan.freed) continue;
                 player.unit().plans.remove(plan);
-                if (!freed.contains(plan)) freed.add(plan);
+                pool.free(plan);
             }
             if (queue != networkAssist) queue.clear();
         }
-        pool.freeAll(freed);
-        freed.clear();
+
     }
 
-    @Override @SuppressWarnings({"unchecked", "rawtypes"}) // Java sucks so warnings must be suppressed
+    @Override
     public void follow() {
         var core = player.core();
-        if (timer.get(15) && core != null) {
+        if (timer.get(delay) && core != null) {
             if (mineItems != null) {
                 Item item = mineItems.min(i -> indexer.hasOre(i) && player.unit().canMine(i), i -> core.items.get(i));
 
@@ -149,19 +152,16 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
 
             if (timer.get(1, 300)) {
                 clientThread.post(() -> {
-                    synchronized (Navigation.obstacles) {
-                        for (var turret : Navigation.obstacles) {
-                            if (!turret.canShoot) continue;
-                            Geometry.circle(World.toTile(turret.x), World.toTile(turret.y), World.toTile(turret.radius), (x, y) -> {
-                                if (Structs.inBounds(x, y, world.width(), world.height()) && turret.contains(x * tilesize, y * tilesize)) {
-                                    if (turret.targetGround || turret.canHitPlayer) {
-                                        temp.set(x, y);
-                                        if (turret.targetGround) blocked.set(x, y);
-                                        if (turret.canHitPlayer) blockedPlayer.set(x, y);
-                                    }
-                                }
-                            });
-                        }
+                    for (var turret : Navigation.getEnts()) {
+                        var canHit = turret.canHitPlayer();
+                        if (!turret.canShoot() || !(turret.targetGround || canHit) || turret.entity.team() == Team.derelict) continue;
+                        Geometry.circle(World.toTile(turret.x()), World.toTile(turret.y()), Mathf.ceil(turret.range() / tilesize) + tilesize, (x, y) -> {
+                            if (Structs.inBounds(x, y, world.width(), world.height()) && turret.contains(x * tilesize, y * tilesize)) {
+                                temp.set(x, y);
+                                if (turret.targetGround) blocked.set(x, y);
+                                if (canHit) blockedPlayer.set(x, y);
+                            }
+                        });
                     }
                     for (var t : world.tiles) { // Unset tiles as needed
                         if (!temp.get(t.x, t.y)) {
@@ -174,14 +174,20 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
             }
 
             clearQueues();
+            if (player.unit().plans.size > 0) {
+                var arr = player.unit().plans.toArray(BuildPlan.class); // FINISHME: Add an overload that takes an array param to avoid making a new one every time, make it use arraycopy twice instead of running get() in a loop
+                Sort.instance().sort(arr, Structs.comparingFloat(p -> p.dst2(player)));
+                player.unit().plans.clear();
+                Structs.each(player.unit().plans::add, arr);
+            }
 
-            if (queues.contains(broken) && !player.unit().team.data().blocks.isEmpty()) {
-                for (Teams.BlockPlan block : player.unit().team.data().blocks) {
+            if (queues.contains(broken, true) && !player.unit().team.data().plans.isEmpty()) {
+                for (Teams.BlockPlan block : player.unit().team.data().plans) {
                     broken.add(pool.obtain().set(block.x, block.y, block.rotation, content.block(block.block), block.config));
                 }
             }
 
-            if (queues.contains(assist)) {
+            if (queues.contains(assist, true)) {
                 for (Unit unit : player.team().data().units) {
                     if (player.unit() != null && unit != player.unit() && unit.isBuilding() && unit.updateBuilding) {
                         for (BuildPlan plan : unit.plans) {
@@ -192,7 +198,7 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
                 }
             }
 
-            if (queues.contains(overdrives)) {
+            if (queues.contains(overdrives, true)) {
                 for (var overdrive : ClientVars.overdrives) {
                     for (var other : ClientVars.overdrives) {
                         if (((OverdriveProjector)overdrive.block).speedBoost > ((OverdriveProjector)other.block).speedBoost && Tmp.cr1.set(overdrive.x, overdrive.y, overdrive.realRange()).contains(Tmp.cr2.set(other.x, other.y, other.realRange()))) {
@@ -202,38 +208,38 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
                 }
             }
 
-            if (queues.contains(unfinished) || queues.contains(boulders) || queues.contains(cleanup) || queues.contains(virus) || queues.contains(drills) || queues.contains(belts)) {
+            if (queues.contains(unfinished, true) || queues.contains(boulders, true) || queues.contains(cleanup, true) || queues.contains(virus, true) || queues.contains(drills, true) || queues.contains(belts, true)) {
                 for (Tile tile : world.tiles) {
-                    if (queues.contains(virus) && tile.team() == player.team() && tile.build instanceof LogicBlock.LogicBuild build && build.isVirus) { // Dont add configured processors
+                    if (queues.contains(virus, true) && tile.team() == player.team() && tile.build instanceof LogicBlock.LogicBuild build && build.isVirus) { // Dont add configured processors
                         virus.add(pool.obtain().set(tile.x, tile.y));
 
-                    } else if (queues.contains(boulders) && tile.breakable() && tile.block() instanceof Prop || tile.build instanceof ConstructBlock.ConstructBuild build && build.previous instanceof Prop) {
+                    } else if (queues.contains(boulders, true) && tile.breakable() && tile.block() instanceof Prop || tile.build instanceof ConstructBlock.ConstructBuild build && build.previous instanceof Prop) {
                         boulders.add(pool.obtain().set(tile.x, tile.y));
 
-                    } else if (queues.contains(cleanup) && tile.isCenter() && (tile.build instanceof ConstructBlock.ConstructBuild build && !build.wasConstructing && build.lastBuilder != null && build.lastBuilder == player.unit() || tile.team() == Team.derelict && tile.breakable() && !(tile.block() instanceof Prop))) {
+                    } else if (queues.contains(cleanup, true) && tile.isCenter() && (tile.build instanceof ConstructBlock.ConstructBuild build && !build.wasConstructing && build.lastBuilder != null && build.lastBuilder == player.unit() || tile.team() == Team.derelict && tile.breakable() && !(tile.block() instanceof Prop))) {
                         cleanup.add(pool.obtain().set(tile.x, tile.y));
 
-                    } else if ((queues.contains(belts) || queues.contains(drills)) && tile.team() == player.team() && tile.build != null && tile.isCenter()) {
+                    } else if ((queues.contains(belts, true) || queues.contains(drills, true)) && tile.team() == player.team() && tile.build != null && tile.isCenter()) {
                         Block block = tile.build instanceof ConstructBlock.ConstructBuild b ? b.previous : tile.block();
 
                         if (upgrades.containsKey(block)) {
                             Block upgrade = upgrades.get(block);
                             if ((state.isCampaign() && !upgrade.unlocked()) || Structs.contains(upgrade.requirements, i -> !core.items.has(i.item, 100) && Mathf.round(i.amount * state.rules.buildCostMultiplier) > 0 && !(tile.build instanceof ConstructBlock.ConstructBuild))) continue;
-                            if (block == Blocks.mechanicalDrill || (queues.contains(belts) && queues.contains(drills))) { // FINISHME: Just use a single queue for upgrades
+                            if (block == Blocks.mechanicalDrill || (queues.contains(belts, true) && queues.contains(drills, true))) { // FINISHME: Just use a single queue for upgrades
                                 drills.add(pool.obtain().set(tile.x, tile.y, tile.build.rotation, upgrade));
                             } else {
                                 belts.add(pool.obtain().set(tile.x, tile.y, tile.build.rotation, upgrade));
                             }
                         }
 
-                    } else if (queues.contains(unfinished) && tile.team() == player.team() && tile.build instanceof ConstructBlock.ConstructBuild build && tile.isCenter()) {
+                    } else if (queues.contains(unfinished, true) && tile.team() == player.team() && tile.build instanceof ConstructBlock.ConstructBuild build && tile.isCenter()) {
                         unfinished.add(build.wasConstructing ?
                             pool.obtain().set(tile.x, tile.y, tile.build.rotation, build.current, tile.build.config()) :
                             pool.obtain().set(tile.x, tile.y));
                     }
                 }
             }
-             if (queues.contains(virus)) {
+             if (queues.contains(virus, true)) {
                  activeVirus = !virus.isEmpty();
                  if (!activeVirus) { // All processors broken or configured
                      for (Tile tile : world.tiles) {
@@ -248,13 +254,13 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
             sort:
             if (player.unit().plans.isEmpty()) {
                 for (int i = 0; i < 2; i++) {
-                    for (Queue queue : queues) {
+                    for (int j = 0; j < queues.size; j++) {
+                        var queue = queues.get(j); // Since we break out of the loop, we can't use the iterator
                         sortPlans(queue, all);
-                        if (priority.empty()) continue;
-                        i = 0;
-                        BuildPlan plan;
-                        while ((plan = priority.poll()) != null && i++ < 300) {
-                            player.unit().addBuild(plan);
+                        if (priority.size == 0) continue;
+
+                        for(int k = 0, count = Math.min(priority.size, maxPlans); k < count; k++){ // Imagine a language with a repeat method
+                            player.unit().addBuild(priority.pop());
                         }
                         priority.clear();
                         break sort;
@@ -277,12 +283,11 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
         if (player.unit().isBuilding()) { // Approach request if building
             var req = player.unit().buildPlan();
 
-            if(valid = validPlan(req)){
+            valid = validPlan(req);
+            if(valid){
                 //move toward the request
-                Formation formation = player.unit().formation;
-                float range = buildingRange - player.unit().hitSize() / 2 - 32; // Range - 4 tiles
-                if (formation != null) range -= formation.pattern.radius(); // Account for the player formation
-                goTo(req.tile(), range); // Cannot go directly to req as it is pooled so the build changes.
+                float range = player.unit().type.buildRange - player.unit().hitSize() / 2f - 32; // Range - 4 tiles
+                goTo(req.tile(), range); // Cannot go directly to req as it is pooled so the build & tile change.
             }else{
                 //discard invalid request
                 player.unit().plans.removeFirst();
@@ -290,11 +295,10 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
         } else if (blockedPlayer.get(player.tileX(), player.tileY())) { // Leave enemy turret range while not building
             if (job == null || job.isDone()) {
                 job = clientThread.post(() -> { // FINISHME: This is totally not inefficient at all...
-                    var safeTiles = new Seq<Tile>() {{
-                        world.tiles.eachTile(t -> {
-                            if (!blockedPlayer.get(t.x, t.y)) add(t);
-                        });
-                    }};
+                    var safeTiles = new Seq<Tile>();
+                    world.tiles.eachTile(t -> {
+                        if (!blockedPlayer.get(t.x, t.y)) safeTiles.add(t);
+                    });
                     var tile = Geometry.findClosest(player.x, player.y, safeTiles);
                     waypoint.set(tile.getX(), tile.getY(), 0, 0);
                 });
@@ -314,13 +318,7 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
     }
 
     @Override
-    public void reset() {
-        broken.clear();
-        boulders.clear();
-        assist.clear();
-        unfinished.clear();
-        cleanup.clear();
-    }
+    public void reset() {}
 
     @Override
     public Position next() {
@@ -328,22 +326,26 @@ public class BuildPath extends Path { // FINISHME: Dear god, this file does not 
     }
 
     /** Adds all the plans to the priority variable
-     * @param includeAll whether to include unaffordable plans (appended to end of affordable ones)*/
+     * @param includeAll whether to include unaffordable plans (appended to end of affordable ones) */
     private void sortPlans(Queue<BuildPlan> plans, boolean includeAll) {
-        if (plans == null) return;
-        plans.each(plan -> {
-            isBlocked.set(false);
-            plan.tile().getLinkedTilesAs(plan.block, t -> {
-                if (blocked.get(t.x, t.y)) isBlocked.set(true);
-            });
-            if ((radius == 0 || plan.dst(origin) < radius * tilesize) && !isBlocked.get() && (includeAll || (plan.block != null && !player.unit().shouldSkip(plan, player.core()))) && validPlan(plan)) priority.add(plan);
-        });
+        float rad = radius * tilesize;
+        planLoop:
+        for (int i = 0, size = plans.size; i < size; i++) {
+            var plan = plans.get(i);
+            if ((radius == 0 || plan.within(origin, rad)) && (includeAll || !player.unit().shouldSkip(plan, player.core())) && validPlan(plan)) { // FINISHME: Implement and use a min-max heap and remove the 300th element whenever the priority queue is larger then that as we only use that many.
+                var edges = Edges.getInsideEdges(plan.block.size);
+                var tile = plan.tile();
+                for (var edge : edges) { // Check if any of the inner edges are blocked
+                    if (blocked.get(tile.x + edge.x, tile.y + edge.y)) continue planLoop;
+                }
+                priority.add(plan);
+            }
+        }
+        priority.sort(Structs.comps(Structs.comparingBool(p -> !(p.block != null && player.unit().shouldSkip(p, player.core()))), Structs.comparingFloat(p -> -p.dst2(player))));
     }
 
     private boolean validPlan(BuildPlan req) {
-        return (!activeVirus || virus.indexOf(req, true) == -1 || req.tile().block() instanceof LogicBlock) &&
-            (req.breaking ?
-            Build.validBreak(player.unit().team(), req.x, req.y) :
-            Build.validPlace(req.block, player.unit().team(), req.x, req.y, req.rotation));
+        return (!activeVirus || virus.indexOf(req, true) == -1 || req.tile().block() instanceof LogicBlock)
+            && (req.breaking ? Build.validBreak(player.team(), req.x, req.y) : Build.validPlace(req.block, player.team(), req.x, req.y, req.rotation));
     }
 }

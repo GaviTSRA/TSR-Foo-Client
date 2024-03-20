@@ -4,28 +4,33 @@ import arc.*;
 import arc.struct.*;
 import arc.util.io.*;
 import arc.util.serialization.*;
+import mindustry.client.*;
 import mindustry.core.*;
 import mindustry.io.*;
 
 import java.util.zip.*;
 
-/**
- * Class for storing all packets.
- */
+/** Class for storing all packets. */
 public class Packets{
 
     public enum KickReason{
-        kick, clientOutdated, serverOutdated, banned, gameover(true), recentKick,
-        nameInUse, idInUse, nameEmpty, customClient, serverClose, vote, typeMismatch,
+        kick, clientOutdated(false), serverOutdated(false), banned(false), gameover(true, true), recentKick,
+        nameInUse, idInUse, nameEmpty(false), customClient(false), serverClose, vote(false), typeMismatch,
         whitelist, playerLimit, serverRestarting;
 
+        public final boolean rejoinable;
         public final boolean quiet;
 
         KickReason(){
-            this(false);
+            this(true);
         }
 
-        KickReason(boolean quiet){
+        KickReason(boolean rejoinable){
+            this(rejoinable, false);
+        }
+
+        KickReason(boolean rejoinable, boolean quiet){
+            this.rejoinable = rejoinable;
             this.quiet = quiet;
         }
 
@@ -40,7 +45,7 @@ public class Packets{
     }
 
     public enum AdminAction{
-        kick, ban, trace, wave
+        kick, ban, trace, wave, switchTeam
     }
 
     /** Generic client connection event. */
@@ -118,7 +123,8 @@ public class Packets{
 
         @Override
         public void write(Writes buffer){
-            buffer.i(Version.build);
+            buffer.i(ClientVars.spoofedBuild != 0 ? ClientVars.spoofedBuild : Version.build);
+            ClientVars.spoofedBuild = 0;
             TypeIO.writeString(buffer, versionType);
             TypeIO.writeString(buffer, name);
             TypeIO.writeString(buffer, locale);

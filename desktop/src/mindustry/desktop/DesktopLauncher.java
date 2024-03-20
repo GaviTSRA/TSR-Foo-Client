@@ -29,7 +29,7 @@ import mindustry.service.*;
 import mindustry.type.*;
 
 import java.io.*;
-import java.util.concurrent.*;
+import java.util.*;
 
 import static mindustry.Vars.*;
 
@@ -39,6 +39,7 @@ public class DesktopLauncher extends ClientLauncher{
     Throwable steamError;
 
     public static void main(String[] arg){
+        System.out.println("Launching Mindustry! Arguments: " + Arrays.toString(arg));
         try{
             int[] aaSamples = new int[1];
 
@@ -47,46 +48,8 @@ public class DesktopLauncher extends ClientLauncher{
 
             Vars.loadLogger();
             Version.init();
-            if (OS.hasProp("git")) { // Run with -Dgit and a git repo initialized in the data dir to sync saves between computers
-                File saves = new File(OS.hasEnv("MINDUSTRY_DATA_DIR") ? OS.env("MINDUSTRY_DATA_DIR") : Version.modifier.contains("steam") ? "saves" : OS.getAppDataDirectoryString("Mindustry"));
-                ProcessBuilder pb = new ProcessBuilder("git", "pull").directory(saves).inheritIO();
-                Log.warn("&rBegin git sync (download)");
-                pb.start().waitFor();
-                Log.warn("&rEnd git sync (download)&fr");
-                Version.init(); // reinit in case of successful pull and version change
-                Runtime.getRuntime().addShutdownHook(new Thread(() -> { // push on game close
-                    try {
-                        Log.warn("&rBegin git sync (upload)");
-                        pb.command("git", "add", "maps", "saves", "schematics", "settings.bin", "mods", "aliases", "keys", ":!*.DS_Store").start().waitFor();
-                        pb.command("git", "commit", "-m", "Upload saves from " + OS.username + " @ " + OS.osName + " x" + OS.osArchBits + " " + OS.osArch).start().waitFor();
-                        pb.command("git", "push").start().waitFor();
-                        Log.warn("&rEnd git sync (upload)&fr");
-                    } catch (InterruptedException | IOException e) {
-                        e.printStackTrace();
-                    }
-                }, "Git Synchronization"));
-            }
 
-            Events.on(EventType.ClientLoadEvent.class, e -> {
-                if (Core.app instanceof SdlApplication) SDL.SDL_SetWindowTitle(((SdlApplication) Core.app).getWindow(), getWindowTitle());
-            });
-
-            if (OS.isMac && !Structs.contains(arg, "-firstThread")) { //restart with -XstartOnFirstThread on mac, doesn't work without it
-                Core.files = new SdlFiles(); //this is null otherwise
-                javaPath = //this is null otherwise
-                    new Fi(OS.prop("java.home")).child("bin/java").exists() ? new Fi(OS.prop("java.home")).child("bin/java").absolutePath() :
-                    Core.files.local("jre/bin/java").exists() ? Core.files.local("jre/bin/java").absolutePath() :
-                    "java";
-                Fi jar = Fi.get(DesktopLauncher.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
-                try {
-                    Seq<String> args = Seq.with(javaPath);
-                    args.addAll(System.getProperties().entrySet().stream().map(it -> "-D" + it).toArray(String[]::new));
-                    args.addAll("-XstartOnFirstThread", "-jar", jar.absolutePath(), "-firstThread");
-
-                    new ProcessBuilder(args.toArray(String.class)).inheritIO().start().waitFor();
-                    return;
-                } catch (IOException ignored) {} //java command failed (couldn't find java install)
-            }
+            Events.on(EventType.ClientLoadEvent.class, e -> Core.graphics.setTitle(getWindowTitle()));
 
             new UnpackJars().unpack();
             Log.infoTag("AA Samples", "" + aaSamples[0]);
@@ -97,13 +60,26 @@ public class DesktopLauncher extends ClientLauncher{
                 width = 900;
                 height = 700;
                 samples = aaSamples[0];
-                //enable gl3 with command-line argument
-                if(Structs.contains(arg, "-gl3")){
-                    gl30 = true;
+                //enable gl3 with command-line argument (slower performance, apparently)
+                for(int i = 0; i < arg.length; i++){
+                    if(arg[i].charAt(0) == '-'){
+                        String name = arg[i].substring(1);
+                        try{
+                            //noinspection EnhancedSwitchMigration
+                            switch(name){
+                                case "width": width = Integer.parseInt(arg[i + 1]); break;
+                                case "height": height = Integer.parseInt(arg[i + 1]); break;
+                                case "gl3": gl30 = true; break;
+                                case "antialias": samples = 16; break;
+                                case "debug": Log.level = LogLevel.debug; break;
+                                case "maximized": maximized = Boolean.parseBoolean(arg[i + 1]); break;
+                            }
+                        }catch(NumberFormatException number){
+                            Log.warn("Invalid parameter number value.");
+                        }
+                    }
                 }
-                if(Structs.contains(arg, "-debug")){
-                    Log.level = LogLevel.debug;
-                }
+
                 setWindowIcon(FileType.internal, "icons/foo_64.png");
             }});
 
@@ -119,7 +95,7 @@ public class DesktopLauncher extends ClientLauncher{
                 if (mod.enabled()) enabled++;
             }
         }
-        return Strings.format("Mindustry (v@) | TSR-Foo Client (@) | @/@ Mods Enabled", Version.buildString(), Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion, enabled, mods == null ? 0 : mods.mods.size);
+        return Strings.format("Mindustry (v@) | Foo's Client (@) | @/@ Mods Enabled", Version.buildString(), Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion, enabled, mods == null ? 0 : mods.mods.size);
     }
 
     @Override
@@ -132,20 +108,16 @@ public class DesktopLauncher extends ClientLauncher{
     public void startDiscord() {
         if(useDiscord){
             try{
-                new FutureTask<Void>(() -> {
-                    try{
-                        DiscordRPC.connect(discordID);
-                        Runtime.getRuntime().addShutdownHook(new Thread(DiscordRPC::close));
-                        Log.info("Initialized Discord rich presence.");
-                    }catch(NoDiscordClientException none){
-                        useDiscord = false;
-                        Log.debug("Not initializing Discord RPC - no discord instance open.");
-                    }catch(Throwable t){
-                        useDiscord = false;
-                        Log.warn("Failed to initialize Discord RPC - you are likely using a JVM <16.");
-                    }
-                }, null).get(500, TimeUnit.MILLISECONDS);
-            } catch (ExecutionException | InterruptedException | TimeoutException ignored) {}
+                DiscordRPC.connect(discordID);
+                updateRPC();
+                Log.info("Initialized Discord rich presence.");
+            }catch(NoDiscordClientException none){
+                useDiscord = false;
+                Log.debug("Not initializing Discord RPC - no discord instance open.");
+            }catch(Throwable t){
+                useDiscord = false;
+                Log.warn("Failed to initialize Discord RPC - you are likely using a JVM <16.");
+            }
         }
     }
 
@@ -156,13 +128,6 @@ public class DesktopLauncher extends ClientLauncher{
         add(Main.INSTANCE);
 
         if(useSteam){
-            //delete leftover dlls
-            for(Fi other : new Fi(".").parent().list()){
-                if(other.name().contains("steam") && (other.extension().equals("dll") || other.extension().equals("so") || other.extension().equals("dylib"))){
-                    other.delete();
-                }
-            }
-
             Events.on(ClientLoadEvent.class, event -> {
                 if(steamError != null){
                     Core.app.post(() -> Core.app.post(() -> Core.app.post(() -> {
@@ -191,6 +156,8 @@ public class DesktopLauncher extends ClientLauncher{
                 logSteamError(e);
             }
         }
+
+        Events.on(DisposeEvent.class, e -> stopDiscord());
     }
 
     void logSteamError(Throwable e){
@@ -222,6 +189,12 @@ public class DesktopLauncher extends ClientLauncher{
             @Override
             public void completeAchievement(String name){
                 SVars.stats.stats.setAchievement(name);
+                SVars.stats.stats.storeStats();
+            }
+
+            @Override
+            public void clearAchievement(String name){
+                SVars.stats.stats.clearAchievement(name);
                 SVars.stats.stats.storeStats();
             }
 
@@ -272,6 +245,8 @@ public class DesktopLauncher extends ClientLauncher{
                         Log.err("Failed to parse steam lobby ID: @", e.getMessage());
                         e.printStackTrace();
                     }
+                }else if(args.length >= 2 && args[0].equals("+connect_server")){
+                    SVars.net.onGameRichPresenceJoinRequested(null, args[1]);
                 }
             });
         });
@@ -375,7 +350,7 @@ public class DesktopLauncher extends ClientLauncher{
             if(state.rules.waves){
                 gameMapWithWave += " | Wave " + state.wave;
             }
-            gameMode = state.rules.pvp ? "PvP" : state.rules.attackMode ? "Attack" : "Survival";
+            gameMode = state.rules.pvp ? "PvP" : state.rules.attackMode ? "Attack" : state.rules.infiniteResources ? "Sandbox" : "Survival";
             if(net.active() && Groups.player.size() > 1){
                 gamePlayersSuffix = " | " + Groups.player.size() + " Players";
             }
@@ -404,18 +379,31 @@ public class DesktopLauncher extends ClientLauncher{
 
             presence.largeImageKey = "logo";
             presence.smallImageKey = "foo";
-            presence.smallImageText = Strings.format("TSR-Foo's Client (@)", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
+            presence.smallImageText = Strings.format("Foo's Client (@)", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion);
             presence.startTimestamp = state.tick == 0 ? beginTime/1000 : Time.timeSinceMillis((long)(state.tick * 16.666));
             presence.label1 = "Client Github";
-            presence.url1 = "https://github.com/GaviTSRA/TSR-Foo-Client";
-            if (DiscordRPC.getStatus() == DiscordRPC.PipeStatus.connected) DiscordRPC.send(presence);
+            presence.url1 = "https://github.com/mindustry-antigrief/mindustry-client";
+            if (DiscordRPC.getStatus() == DiscordRPC.PipeStatus.connected) {
+                DiscordRPC.send(presence);
+            }
         }
 
         if(steam){
             //Steam mostly just expects us to give it a nice string, but it apparently expects "steam_display" to always be a loc token, so I've uploaded this one which just passes through 'steam_status' raw.
             SVars.net.friends.setRichPresence("steam_display", "#steam_status_raw");
 
-            SVars.net.friends.setRichPresence("steam_status", Strings.format("TSR-Foo Client (@) | @", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion, inGame ? gameMapWithWave : uiState));
+            String status = Strings.format("Foo's Client (@) | @", Version.clientVersion.equals("v0.0.0") ? "Dev" : Version.clientVersion, inGame ? gameMapWithWave : uiState);
+            SVars.net.friends.setRichPresence("steam_status", status);
+            SVars.net.friends.setRichPresence("status", inGame ? status : null); // This shows in the view game info menu. We should add more stuff to it, using the steam_status value is just a placeholder as it's required for joining.
+            String currentLobby = SVars.net.currentLobby == null ? null : "" + SVars.net.currentLobby.handle();
+            SVars.net.friends.setRichPresence("steam_player_group",
+                net.server() ? currentLobby :
+                net.client() && currentLobby != null ? currentLobby :
+                ui.join.lastHost != null ? ui.join.lastHost.address :
+                null
+            );
+            SVars.net.friends.setRichPresence("steam_player_group_size", net.active() ? "" + Groups.player.size() : null);
+            SVars.net.friends.setRichPresence("connect", net.client() && currentLobby == null && ui.join.lastHost != null ? Strings.format("+connect_server @:@", ui.join.lastHost.address, ui.join.lastHost.port) : null);
         }
     }
 
@@ -436,12 +424,5 @@ public class DesktopLauncher extends ClientLauncher{
 
     private static void message(String message){
         SDL.SDL_ShowSimpleMessageBox(SDL.SDL_MESSAGEBOX_ERROR, "oh no", message);
-    }
-
-    private boolean validAddress(byte[] bytes){
-        if(bytes == null) return false;
-        byte[] result = new byte[8];
-        System.arraycopy(bytes, 0, result, 0, bytes.length);
-        return !new String(Base64Coder.encode(result)).equals("AAAAAAAAAOA=") && !new String(Base64Coder.encode(result)).equals("AAAAAAAAAAA=");
     }
 }

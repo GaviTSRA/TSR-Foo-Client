@@ -20,15 +20,22 @@ import static mindustry.Vars.*;
 public class CrashSender{
 
     public static String createReport(String error){
+        var lastHost = ui.join.lastHost;
+        var lastIp = Reflect.<String>get(ui.join, "lastIp");
+        var group = lastHost != null ? lastHost.group != null ? lastHost.group : ui.join.communityHosts.find(h -> h.equals(lastHost)) != null ? ui.join.communityHosts.find(h -> h.equals(lastHost)).group : null : null;
         String report = "Ohno, the game has crashed. Report this at: " + clientDiscord + "\n\n";
         report += "Copy paste the report below when reporting:\n```java\n";
-        return report
+        return Strings.stripColors(report
         + "Version: " + Version.combined() + (Vars.headless ? " (Server)" : "") + "\n"
+        + "Last Server: " + (lastHost != null ? lastHost.name + (group != null ? " (" + group + ") " : "(nogroup)") + " (" + lastHost.address + ":" + lastHost.port + ")" : lastIp != null && lastIp.startsWith("steam:") ? "steam" : "unknown/none") + "\n"
         + "Source: " + settings.getString("updateurl") + "\n"
         + "OS: " + OS.osName + " x" + (OS.osArchBits) + " (" + OS.osArch + ")\n"
+        + ((OS.isAndroid || OS.isIos) && app != null ? "Android API level: " + Core.app.getVersion() + "\n" : "")
         + "Java Version: " + OS.javaVersion + "\n"
-        + (mods == null ? "<no mod init>" : "Mods: " + (!mods.list().contains(LoadedMod::shouldBeEnabled) ? "none (vanilla)" : mods.list().select(LoadedMod::shouldBeEnabled).toString(", ", mod -> mod.name + ":" + mod.meta.version)))
-        + "\n\n" + error + "```";
+        + "Runtime Available Memory: " + (Runtime.getRuntime().maxMemory() / 1024 / 1024) + "mb\n"
+        + "Cores: " + Runtime.getRuntime().availableProcessors() + "\n"
+        + (mods == null ? "<no mod init>" : "Mods: " + (!mods.list().contains(LoadedMod::enabled) ? "none (vanilla)" : mods.list().select(LoadedMod::shouldBeEnabled).toString(", ", mod -> mod.name + ":" + mod.meta.version)))
+        + "\n\n") + error + "```";
     }
 
     public static void log(Throwable exception){
@@ -54,7 +61,7 @@ public class CrashSender{
             }catch(Throwable ignored){}
 
             //don't create crash logs for custom builds, as it's expected
-            if(Version.build == -1 || (OS.username.equals("anuke") && !"steam".equals(Version.modifier))){
+            if(OS.username.equals("anuke") && !"steam".equals(Version.modifier)){
                 ret();
             }
 
@@ -83,7 +90,7 @@ public class CrashSender{
             try{
                 File file = new File(OS.getAppDataDirectoryString(Vars.appName), "crashes/crash-report-" + new SimpleDateFormat("MM_dd_yyyy_HH_mm_ss").format(new Date()) + ".txt");
                 new Fi(OS.getAppDataDirectoryString(Vars.appName)).child("crashes").mkdirs();
-                new Fi(file).writeString(createReport(parseException(exception)));
+                new Fi(file).writeString(createReport(writeException(exception)));
                 writeListener.get(file);
             }catch(Throwable e){
                 Log.err("Failed to save local crash report.", e);
@@ -167,17 +174,10 @@ public class CrashSender{
         System.exit(1);
     }
 
-    private static String parseException(Throwable e){
+    private static String writeException(Throwable e){
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);
         e.printStackTrace(pw);
         return sw.toString();
-    }
-
-    private static void ex(Runnable r){
-        try{
-            r.run();
-        }catch(Throwable ignored){
-        }
     }
 }

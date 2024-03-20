@@ -9,7 +9,6 @@ import mindustry.type.*;
 import mindustry.world.*;
 import mindustry.world.blocks.power.*;
 import mindustry.world.blocks.storage.*;
-import mindustry.world.consumers.*;
 
 import static mindustry.Vars.*;
 
@@ -36,12 +35,14 @@ public class Schematic implements Publishable, Comparable<Schematic>{
     }
 
     public float powerConsumption(){
-        return tiles.sumf(s -> s.block.consumes.has(ConsumeType.power) ? s.block.consumes.getPower().usage : 0f);
+        return tiles.sumf(s -> s.block.consPower != null ? s.block.consPower.usage : 0f);
     }
 
     public ItemSeq requirements(){
-        ItemSeq requirements = new ItemSeq();
+        return requirements(new ItemSeq());
+    }
 
+    public ItemSeq requirements(ItemSeq requirements){
         tiles.each(t -> {
             for(ItemStack stack : t.block.requirements){
                 requirements.add(stack.item, stack.amount);

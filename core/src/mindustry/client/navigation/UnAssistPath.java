@@ -8,11 +8,12 @@ import arc.util.*;
 import mindustry.*;
 import mindustry.client.*;
 import mindustry.client.antigrief.*;
+import mindustry.client.utils.*;
+import mindustry.content.*;
 import mindustry.entities.units.*;
 import mindustry.game.*;
 import mindustry.gen.*;
 import mindustry.input.*;
-import mindustry.world.*;
 import mindustry.world.blocks.*;
 
 public class UnAssistPath extends Path {
@@ -22,10 +23,10 @@ public class UnAssistPath extends Path {
 
     static {
         // Remove placed blocks, place removed blocks
-        Events.on(EventType.BlockBuildBeginEventBefore.class, e -> {
-            if (e.tile == null || !(Navigation.currentlyFollowing instanceof UnAssistPath p) || e.unit != p.target.unit() || (e.breaking && !e.tile.block().isVisible())) return;
+        Events.on(EventType.BlockBuildBeginEventBefore.class, e -> { // FINISHME: If a block is rotated twice by being placed over before the first event is processed, the block wont be reset properly. Is a fix as simple as returning if theres already something queued at (x,y)? I don't care to find out
+            if (e.tile == null || !(Navigation.currentlyFollowing instanceof UnAssistPath p) || e.unit != p.target.unit() || (e.breaking && !e.tile.block().isPlaceable())) return;
 
-            if (e.breaking) p.toUndo.add(new BuildPlan(e.tile.x, e.tile.y, e.tile.build == null ? 0 : e.tile.build.rotation, e.tile.block(), e.tile.build == null ? null : e.tile.build.config()));
+            if (e.tile.block() != Blocks.air) p.toUndo.add(new BuildPlan(e.tile.x, e.tile.y, e.tile.build == null ? 0 : e.tile.build.rotation, e.tile.block(), e.tile.build == null ? null : e.tile.build.config()));
             else p.toUndo.add(new BuildPlan(e.tile.x, e.tile.y));
         });
 
@@ -37,10 +38,11 @@ public class UnAssistPath extends Path {
         });
 
         // Undo block rotates
-        Events.on(EventType.BlockRotateEvent.class, e -> {
-            if (e.build == null || !(Navigation.currentlyFollowing instanceof UnAssistPath p) || e.player != p.target) return;
+        Events.on(EventType.BuildRotateEvent.class, e -> {
+            if (e.build == null || !(Navigation.currentlyFollowing instanceof UnAssistPath p) || e.unit == null || e.unit.getPlayer() != p.target) return;
 
-            ClientVars.configs.add(new ConfigRequest(e.build, !e.direction, true));
+            boolean direction = ClientUtils.rotationDirection(e.previous, e.build.rotation);
+            ClientVars.configs.add(new ConfigRequest(e.build, !direction, true));
         });
     }
 
@@ -62,13 +64,11 @@ public class UnAssistPath extends Path {
         if (target == null || Vars.player == null) return;
 
         try {
-            if (target.unit().canBuild()) { // FINISHME: What even
+            if (target.unit().canBuild()) {
                 BuildPlan plan = target.unit().buildPlan();
                 if (plan != null) {
                     if (plan.initialized) {
-                        Tile tile = Vars.world.tile(plan.x, plan.y);
-                        if (tile.build instanceof ConstructBlock.ConstructBuild) {
-                            ConstructBlock.ConstructBuild build = (ConstructBlock.ConstructBuild) tile.build;
+                        if (plan.tile().build instanceof ConstructBlock.ConstructBuild build) {
                             if (build.current.buildCost > 10) {
                                 if (plan.breaking) {
                                     toUndo.add(new BuildPlan(plan.x, plan.y, build.rotation, build.current, build.lastConfig));
@@ -85,7 +85,7 @@ public class UnAssistPath extends Path {
         if(follow) waypoint.set(target.x, target.y, 0f, 0f).run(); // FINISHME: Navigation
         else { // FINISHME: This is horrendous, it should really just enable the default movement instead
             Unit u = Vars.player.unit();
-            boolean aimCursor = u.type.omniMovement && Vars.player.shooting && u.type.hasWeapons() && u.type.faceTarget && !(u instanceof Mechc && u.isFlying()) && u.type.rotateShooting;
+            boolean aimCursor = u.type.omniMovement && Vars.player.shooting && u.type.hasWeapons() && u.type.faceTarget && !(u instanceof Mechc && u.isFlying());
             if (aimCursor) u.lookAt(Angles.mouseAngle(u.x, u.y));
             else u.lookAt(u.prefRotation());
             u.moveAt(Vars.control.input instanceof DesktopInput in ? in.movement : ((MobileInput)Vars.control.input).movement);
@@ -93,7 +93,7 @@ public class UnAssistPath extends Path {
         }
 
         IntSet contains = new IntSet();
-        toUndo.filter(plan -> { // FINISHME: ???
+        toUndo.retainAll(plan -> { // FINISHME: ???
             int pos = Point2.pack(plan.x, plan.y);
             if (contains.contains(pos)) {
                 return false;
@@ -130,7 +130,7 @@ public class UnAssistPath extends Path {
     }
 
     @Override
-    public void draw() {
+    public synchronized void draw() {
         if (target == null) return;
         target.unit().drawBuildPlans();
     }

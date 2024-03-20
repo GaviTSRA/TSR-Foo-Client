@@ -9,6 +9,7 @@ import arc.struct.*;
 import arc.util.*;
 import mindustry.ctype.*;
 import mindustry.gen.*;
+import mindustry.type.*;
 import mindustry.ui.*;
 import mindustry.world.*;
 
@@ -64,10 +65,10 @@ public class ItemSelection{
 
             Seq<T> list = items.select(u -> (text.isEmpty() || u.localizedName.toLowerCase().contains(text.toLowerCase())));
             for(T item : list){
-                if(!item.unlockedNow()) continue;
+                if(!item.unlockedNow() || (item instanceof Item checkVisible && state.rules.hiddenBuildItems.contains(checkVisible)) || item.isHidden()) continue;
 
-                ImageButton button = cont.button(Tex.whiteui, Styles.clearToggleTransi, Mathf.clamp(item.selectionSize, 0f, 40f), () -> {
-                    if(closeSelect) control.input.frag.config.hideConfig();
+                ImageButton button = cont.button(Tex.whiteui, Styles.clearNoneTogglei, Mathf.clamp(item.selectionSize, 0f, 40f), () -> {
+                    if(closeSelect) control.input.config.hideConfig();
                 }).tooltip(item.localizedName).group(group).get();
                 button.changed(() -> consumer.get(button.isChecked() ? item : null));
                 button.getStyle().imageUp = new TextureRegionDrawable(item.uiIcon);
@@ -78,23 +79,17 @@ public class ItemSelection{
                     rowCount++;
                 }
             }
-
-            //add extra blank spaces so it looks nice
-            if(i % columns != 0){
-                int remaining = columns - (i % columns);
-                for(int j = 0; j < remaining; j++){
-                    cont.image(Styles.none);
-                }
-            }
         };
 
         rebuild.run();
 
         Table main = new Table().background(Styles.black6);
         if(rowCount > rows * 1.5f){
-            search = main.field(null, text -> rebuild.run()).width(40 * columns).padBottom(4).left().growX().get();
-            search.setMessageText("@players.search");
-            main.row();
+            main.table(s -> {
+                s.image(Icon.zoom).padLeft(4f);
+                search = s.field(null, text -> rebuild.run()).padBottom(4).left().growX().get();
+                search.setMessageText("@players.search");
+            }).fillX().row();
         }
 
         ScrollPane pane = new ScrollPane(cont, Styles.smallPane);

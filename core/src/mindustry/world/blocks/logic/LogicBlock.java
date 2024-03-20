@@ -1,8 +1,13 @@
 package mindustry.world.blocks.logic;
 
 import arc.*;
+import arc.Graphics.*;
+import arc.Graphics.Cursor.*;
 import arc.func.*;
 import arc.graphics.*;
+import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Lines;
+import arc.math.*;
 import arc.math.geom.*;
 import arc.scene.ui.layout.*;
 import arc.struct.Bits;
@@ -34,14 +39,15 @@ import java.util.zip.*;
 import static mindustry.Vars.*;
 
 public class LogicBlock extends Block{
-    private static final int maxByteLen = 1024 * 500;
+    public static final int maxByteLen = 1024 * 100;
     private static @Nullable Player lastAttem;
     private static int attemCount;
-    private static long attemTime;
     private static ChatFragment.ChatMessage attemMsg;
 
     public int maxInstructionScale = 5;
     public int instructionsPerTick = 1;
+    //privileged only
+    public int maxInstructionsPerTick = 40;
     public float range = 8 * 10;
 
     public LogicBlock(String name){
@@ -55,9 +61,15 @@ public class LogicBlock extends Block{
         //universal, no real requirements
         envEnabled = Env.any;
 
-        config(byte[].class, (LogicBuild build, byte[] data) -> build.readCompressed(data, true));
+        config(byte[].class, (LogicBuild build, byte[] data) -> {
+            if(!accessible()) return;
+
+            build.readCompressed(data, true);
+        });
 
         config(Integer.class, (LogicBuild entity, Integer pos) -> {
+            if(!accessible()) return;
+
             //if there is no valid link in the first place, nobody cares
             if(!entity.validLink(world.build(pos))) return;
             var lbuild = world.build(pos);
@@ -67,11 +79,21 @@ public class LogicBlock extends Block{
             String bname = getLinkName(lbuild.block);
 
             if(link != null){
-                link.active = !link.active;
-                //find a name when the base name differs (new block type)
-                if(!link.name.startsWith(bname)){
-                    link.name = "";
-                    link.name = entity.findLinkName(lbuild.block);
+                if(net.active()) {
+                    link.active = !link.active;
+                    //find a name when the base name differs (new block type)
+                    if (!link.name.startsWith(bname)) {
+                        link.name = "";
+                        link.name = entity.findLinkName(lbuild.block);
+                    }
+                    if(!link.active && lbuild.block.autoResetEnabled && lbuild.lastDisabler == entity){
+                        lbuild.enabled = true;
+                    }
+                } else {
+                    entity.links.remove(link);
+                    if(lbuild.block.autoResetEnabled && lbuild.lastDisabler == entity){
+                        lbuild.enabled = true;
+                    }
                 }
             }else{
                 entity.links.remove(l -> world.build(l.x, l.y) == lbuild);
@@ -80,6 +102,20 @@ public class LogicBlock extends Block{
 
             entity.updateCode(entity.code, true, null);
         });
+    }
+
+    @Override
+    public boolean checkForceDark(Tile tile){
+        return !accessible();
+    }
+
+    public boolean accessible(){
+        return !privileged || state.rules.editor || state.playtestingMap != null;
+    }
+
+    @Override
+    public boolean canBreak(Tile tile){
+        return accessible();
     }
 
     public static String getLinkName(Block block){
@@ -102,8 +138,8 @@ public class LogicBlock extends Block{
 
     public static byte[] compress(byte[] bytes, Seq<LogicLink> links){
         try{
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            DataOutputStream stream = new DataOutputStream(new DeflaterOutputStream(baos));
+            var baos = new ByteArrayOutputStream();
+            var stream = new DataOutputStream(new DeflaterOutputStream(baos));
 
             //current version of config format
             stream.write(1);
@@ -153,12 +189,16 @@ public class LogicBlock extends Block{
     public void setStats(){
         super.setStats();
 
-        stats.add(Stat.linkRange, range / 8, StatUnit.blocks);
-        stats.add(Stat.instructions, instructionsPerTick * 60, StatUnit.perSecond);
+        if(!privileged){
+            stats.add(Stat.linkRange, range / 8, StatUnit.blocks);
+            stats.add(Stat.instructions, instructionsPerTick * 60, StatUnit.perSecond);
+        }
     }
 
     @Override
     public void drawPlace(int x, int y, int rotation, boolean valid){
+        if(privileged) return;
+
         Drawf.circles(x*tilesize + offset, y*tilesize + offset, range);
     }
 
@@ -172,7 +212,7 @@ public class LogicBlock extends Block{
 
                 int bytelen = stream.readInt();
 
-                if(bytelen > maxByteLen) throw new RuntimeException("Malformed logic data! Length: " + bytelen);
+                if(bytelen > maxByteLen) throw new RuntimeException("Logic data too long or malformed! Length: " + bytelen);
 
                 byte[] bytes = new byte[bytelen];
                 stream.readFully(bytes);
@@ -229,9 +269,16 @@ public class LogicBlock extends Block{
         public Seq<LogicLink> links = new Seq<>();
         public boolean checkedDuplicates = false;
         public boolean isVirus = false;
+        //dynamic only for privileged processors
+        public int ipt = instructionsPerTick;
 
         /** Block of code to run after load. */
         public @Nullable Runnable loadBlock;
+
+        {
+            executor.privileged = privileged;
+            executor.build = this;
+        }
 
         public void readCompressed(byte[] data, boolean relative){
             try(DataInputStream stream = new DataInputStream(new InflaterInputStream(new ByteArrayInputStream(data)))){
@@ -323,7 +370,7 @@ public class LogicBlock extends Block{
 
                 try{
                     //create assembler to store extra variables
-                    LAssembler asm = LAssembler.assemble(str);
+                    LAssembler asm = LAssembler.assemble(str, privileged);
 
                     //store connections
                     for(LogicLink link : links){
@@ -375,9 +422,43 @@ public class LogicBlock extends Block{
                     executor.load(asm);
                 }catch(Exception e){
                     //handle malformed code and replace it with nothing
-                    executor.load(code = "");
+                    executor.load(LAssembler.assemble(code = "", privileged));
                 }
             }
+        }
+
+        //editor-only processors cannot be damaged or destroyed
+        @Override
+        public boolean collide(Bullet other){
+            return !privileged;
+        }
+
+        @Override
+        public boolean displayable(){
+            return accessible();
+        }
+
+        @Override
+        public void damage(float damage){
+            if(!privileged){
+                super.damage(damage);
+            }
+        }
+
+        @Override
+        public void removeFromProximity(){
+            super.removeFromProximity();
+
+            for(var link : executor.links){
+                if(!link.enabled && link.lastDisabler == this){
+                    link.enabled = true;
+                }
+            }
+        }
+
+        @Override
+        public Cursor getCursor(){
+            return !accessible() ? SystemCursor.arrow : super.getCursor();
         }
 
         //logic blocks cause write problems when picked up
@@ -457,15 +538,19 @@ public class LogicBlock extends Block{
                 updateCode(code, true, null);
             }
 
-            if(enabled){
-                accumulator += edelta() * instructionsPerTick * (consValid() ? 1 : 0);
+            if(!privileged){
+                ipt = instructionsPerTick;
+            }
 
-                if(accumulator > maxInstructionScale * instructionsPerTick) accumulator = maxInstructionScale * instructionsPerTick;
+            if(state.rules.disableWorldProcessors && privileged) return;
+
+            if(enabled && executor.initialized()){
+                accumulator += edelta() * ipt;
+
+                if(accumulator > maxInstructionScale * ipt) accumulator = maxInstructionScale * ipt;
 
                 for(int i = 0; i < (int)accumulator; i++){
-                    if(executor.initialized()){
-                        executor.runOnce();
-                    }
+                    executor.runOnce();
                     accumulator --;
                 }
             }
@@ -480,39 +565,42 @@ public class LogicBlock extends Block{
         public void configured(Unit builder, Object value) {
             super.configured(builder, value);
 
-            if (value instanceof byte[] && team == player.team() && Core.settings.getBool("attemwarfare") && (ClientUtilsKt.io() || ClientUtilsKt.phoenix())) {
-                Player player = builder == null ? null :
-                                builder.isPlayer() ? builder.playerNonNull() :
-                                builder.controller() instanceof FormationAI ai && ai.leader.isPlayer() ? ai.leader.playerNonNull() :
-                                builder.controller() instanceof LogicAI ai && ai.controller != null ? Groups.player.find(p -> p.name.equals(ai.controller.lastAccessed)) :
-                                null;
+            if (player != null && team == player.team() && value instanceof byte[] && Core.settings.getBool("attemwarfare")) {
+                Player player = ClientUtils.getPlayer(builder);
                 clientThread.post(() -> { // The regex can be expensive, so we delegate it to the client thread
                     long begin = Time.nanos();
-                    if (!ProcessorPatcher.INSTANCE.patch(code).equals(code)) {
+                    var patched = ProcessorPatcher.INSTANCE.patch(code, Core.settings.getBool("removeatteminsteadoffixing") ? ProcessorPatcher.FixCodeMode.Remove : ProcessorPatcher.FixCodeMode.Fix);
+                    if (!patched.equals(code)) {
                         Core.app.post(() -> { // FINISHME: Fallback to controller name if player is null
-                            if (player != lastAttem || player == null) {
+                            if ((player != lastAttem || player == null)) {
+                                //Player does not exist or is not the last warned player
                                 lastAttem = player;
                                 attemCount = 1;
-                                attemTime = Time.millis();
-                                attemMsg = ui.chatfrag.addMessage(Strings.format("[scarlet]Attem placed by @[scarlet] at (@, @)", builder == null ? "unknown" : builder.getControllerName(), tileX(), tileY()), (Color)null);
-                                if (player != null) { // FINISHME: Send this every time an attem is placed but hide it from our view instead
-                                    Call.sendChatMessage("/w " + player.id + " Hello, please do not use that logic it is bad. More info at: www.mindustry.dev/attem");
+                                //Try to whisper
+                                if(ProcessorPatcher.INSTANCE.whisper(player)){
+                                    attemMsg = ui.chatfrag.addMsg(Core.bundle.format("client.attemwarn", ClientUtils.getName(builder), tile.x, tile.y));
+                                    NetClient.findCoords(attemMsg);
                                 }
+                                //If global ratelimit exceeded, or this player has been warned within 5 seconds, this fails
+                                //FINISHME: move all of this logic into processorpatcher
                             } else {
-                                if(Time.timeSinceMillis(attemTime) > 5000) {
-                                    Call.sendChatMessage("/w " + player.id + " Hello, please do not use that logic it is bad. More info at: www.mindustry.dev/attem");
-                                    attemTime = Time.millis();
+                                //Player has already placed attem, try to warn
+                                if (ProcessorPatcher.INSTANCE.whisper(player)) {
+                                    //Fails if they were warned within the past 5 seconds
+                                    //Warn sent again, move attem message to bottom of chat frag and update it
                                     ui.chatfrag.messages.remove(attemMsg);
                                     ui.chatfrag.messages.insert(0, attemMsg);
+                                    attemMsg.prefix = "[accent](x" + ++attemCount + ") ";
+                                    attemMsg.format();
+                                    attemMsg.clearButtons(); // Update the clickable coord positions
+                                    NetClient.findCoords(attemMsg);
                                 }
-                                attemMsg.prefix = "[accent](x" + ++attemCount + ") ";
-                                attemMsg.format();
                             }
-                            lastAttem = player;
-                            ProcessorPatcher.INSTANCE.inform(this);
+                            ClientVars.lastSentPos.set(tile.x, tile.y);
+                            ClientVars.configs.add(new ConfigRequest(tile.x, tile.y, compress(patched, relativeConnections())));
                         });
                     }
-                    Log.debug("Regex: @ms", Time.timeSinceNanos(begin)/(float)Time.nanosPerMilli);
+                    Log.debug("Attem Regex: @ms", Time.millisSinceNanos(begin));
                 });
             }
         }
@@ -532,7 +620,9 @@ public class LogicBlock extends Block{
         public void drawConfigure(){
             super.drawConfigure();
 
-            Drawf.circles(x, y, range);
+            if(!privileged){
+                Drawf.circles(x, y, range);
+            }
 
             for(LogicLink l : links){
                 Building build = world.build(l.x, l.y);
@@ -552,32 +642,60 @@ public class LogicBlock extends Block{
 
         @Override
         public void drawSelect(){
-            Groups.unit.each(u -> u.controller() instanceof LogicAI ai && ai.controller == this, unit -> {
+            Groups.unit.each(u -> u.controller() instanceof LogicAI ai && ai.controller == this && !ClientVars.hidingUnits && !(ClientVars.hidingAirUnits && u.isFlying()), unit -> {
                 Drawf.square(unit.x, unit.y, unit.hitSize, unit.rotation + 45);
+                if (Core.settings.getBool("tracelogicunits")) {
+                    Draw.draw(Layer.overlayUI + 0.01f, () -> { // Taken from extended-UI
+                        Lines.stroke(2, Color.purple);
+                        Draw.alpha(0.7f);
+                        Lines.line(unit.x, unit.y, this.x, this.y);
+                        Draw.reset();
+                    });
+                }
             });
         }
 
         public boolean validLink(Building other){
-            return other != null && other.isValid() && other.team == team && other.within(this, range + other.block.size*tilesize/2f) && !(other instanceof ConstructBuild);
+            return other != null && other.isValid() && (privileged || (!other.block.privileged && other.team == team && other.within(this, range + other.block.size*tilesize/2f))) && !(other instanceof ConstructBuild);
+        }
+
+        public void removeCode(){
+            ClientVars.configs.add(new ConfigRequest(
+                this, compress("print \"code was removed\"\n", relativeConnections())
+            ));
+        }
+        public void removeLinks(){
+            ClientVars.configs.add(new ConfigRequest(this, compress(code, Seq.with())));
         }
 
         @Override
         public void buildConfiguration(Table table){
-            table.button(Icon.pencil, Styles.clearTransi, () ->
-                ui.logic.show(code, executor, code -> configure(compress(code, relativeConnections())))
+            table.button(Icon.pencil, Styles.cleari, () ->
+                ui.logic.show(code, executor, privileged, code -> configure(compress(code, relativeConnections())))
             ).size(40);
 
-            table.button(Icon.refresh, Styles.clearTransi, () -> {
+            // FINISHME: bundle
+            table.button(Icon.refresh, Styles.cleari, () -> {
                 var original = code;
                 ClientVars.configs.add(() -> { // Cursed, enqueues a config now, when that one is run it enqueues a second config.
                     new ConfigRequest(this, compress("end\n" + code, relativeConnections())).run();
                     Timer.schedule(() -> ClientVars.configs.add(new ConfigRequest(this, LogicBlock.compress(original, relativeConnections()))), net.client() ? netClient.getPing()/1000f : 0);
                 });
             }).size(40).tooltip("Restart code execution").disabled(b -> !ClientVars.configs.isEmpty());
+
+            table.button(Icon.trash, Styles.cleari, () -> {
+                if(Core.input.shift()) removeCode();
+                else ui.showConfirm("@confirm", "Are you sure you want to delete this processor's code?", this::removeCode);
+            }).size(40).tooltip("Remove code").disabled(b -> !ClientVars.configs.isEmpty());
+
+            table.button(Icon.eyeOff, Styles.cleari, () -> {
+                if(Core.input.shift()) removeLinks();
+                else ui.showConfirm("@confirm", "Are you sure you want to remove all links?", this::removeLinks);
+            }).size(40).tooltip("Remove all links").disabled(b -> !ClientVars.configs.isEmpty());
         }
 
         @Override
-        public boolean onConfigureTileTapped(Building other){
+        public boolean onConfigureBuildTapped(Building other){
             if(this == other){
                 deselect();
                 return false;
@@ -586,16 +704,25 @@ public class LogicBlock extends Block{
             if (!this.interactable(player.team())) return false;
 
             if(validLink(other)){
+                if(Core.settings.getBool("logiclinkorder")){
+                    int ox = other.tileX(), oy = other.tileY();
+                    LogicLink link = links.find(l -> l.x == ox && l.y == oy);
+                    if(link != null && link.active){
+                        links.remove(link, true);
+                        configure(compress(code, relativeConnections()));
+                        return false;
+                    }
+                }
                 configure(other.pos());
                 return false;
             }
 
-            return super.onConfigureTileTapped(other);
+            return super.onConfigureBuildTapped(other);
         }
 
         @Override
         public byte version(){
-            return 1;
+            return 2;
         }
 
         @Override
@@ -607,31 +734,38 @@ public class LogicBlock extends Block{
             write.b(compressed);
 
             //write only the non-constant variables
-            int count = Structs.count(executor.vars, v -> !v.constant);
+            int count = Structs.count(executor.vars, v -> (!v.constant || v == executor.vars[LExecutor.varUnit]) && !(v.isobj && v.objval == null));
 
             write.i(count);
             for(int i = 0; i < executor.vars.length; i++){
                 Var v = executor.vars[i];
 
-                if(v.constant) continue;
+                //null is the default variable value, so waste no time serializing that
+                if(v.isobj && v.objval == null) continue;
+
+                //skip constants
+                if(v.constant && i != LExecutor.varUnit) continue;
 
                 //write the name and the object value
                 write.str(v.name);
 
                 Object value = v.isobj ? v.objval : v.numval;
-                if(value instanceof Unit) value = null; //do not save units.
                 TypeIO.writeObject(write, value);
             }
 
             //no memory
             write.i(0);
+
+            if(privileged){
+                write.s(Mathf.clamp(ipt, 1, maxInstructionsPerTick));
+            }
         }
 
         @Override
         public void read(Reads read, byte revision){
             super.read(read, revision);
 
-            if(revision == 1){
+            if(revision >= 1){
                 int compl = read.i();
                 byte[] bytes = new byte[compl];
                 read.b(bytes);
@@ -667,11 +801,19 @@ public class LogicBlock extends Block{
                 //load up the variables that were stored
                 for(int i = 0; i < varcount; i++){
                     BVar dest = asm.getVar(names[i]);
-                    if(dest != null && !dest.constant){
-                        dest.value = values[i] instanceof BuildingBox box ? world.build(box.pos) : values[i];
+
+                    if(dest != null && (!dest.constant || dest.id == LExecutor.varUnit)){
+                        dest.value =
+                            values[i] instanceof BuildingBox box ? box.unbox() :
+                            values[i] instanceof UnitBox box ? box.unbox() :
+                            values[i];
                     }
                 }
             });
+
+            if(privileged && revision >= 2){
+                ipt = Mathf.clamp(read.s(), 1, maxInstructionsPerTick);
+            }
 
         }
     }

@@ -26,7 +26,8 @@ object Packets {
         RegisteredTransmission(CommandTransmission::class, ::CommandTransmission),
         RegisteredTransmission(ClientMessageTransmission::class, ::ClientMessageTransmission),
         RegisteredTransmission(ImageTransmission::class, ::ImageTransmission),
-        RegisteredTransmission(SyncerTransmission::class, ::SyncerTransmission)
+        RegisteredTransmission(SyncerTransmission::class, ::SyncerTransmission),
+        RegisteredTransmission(SchematicTransmission::class, ::SchematicTransmission)
     )
 
     private data class RegisteredTransmission<T : Transmission>(val type: KClass<T>, val constructor: (content: ByteArray, id: Long, senderID: Int) -> T)
@@ -132,7 +133,7 @@ object Packets {
         private val incoming = ConcurrentHashMap<Long, IncomingTransmission>()
         /** A list of listeners to be run when a transmission is received. */
         private val listeners = CopyOnWriteArrayList<(transmission: Transmission, senderId: Int) -> Unit>()
-        val listenersLock = ReentrantLock()
+        private val listenersLock = ReentrantLock()
 
         data class IncomingTransmission(val segments: MutableList<ByteArray?>, var expirationTime: Instant)
 
@@ -152,7 +153,7 @@ object Packets {
                 val toSend = outgoing.peek() ?: return // Return if there's nothing to send
 
                 // Gets the next packet in this transmission, if there are no more packets move to the next transmission
-                val packet = toSend.packets.poll() ?: run { outgoing.remove(toSend); toSend.onFinish?.invoke(); return }
+                val packet = toSend.packets.poll() ?: run { outgoing.remove(toSend); toSend.onFinish?.run(); return }
 
                 lastSent.reset(0, 0f) // Sending a packet, reset the timer fully
                 try { communicationSystem.send(packet.bytes()) } catch (e: Exception) { outgoing.remove(toSend); toSend.onError?.invoke() }
@@ -175,8 +176,7 @@ object Packets {
                 val content = buf.remainingBytes()
 
                 if (header.sequenceNumber >= header.sequenceCount)
-                    throw IndexOutOfBoundsException("Packet sequence number ${header.sequenceNumber} " +
-                            "is greater than or equal to sequence count ${header.sequenceCount}!")
+                    throw IndexOutOfBoundsException("Packet sequence number ${header.sequenceNumber} is greater than or equal to sequence count ${header.sequenceCount}!")
 
                 if (header.transmissionType >= registeredTransmissionTypes.size)
                     throw IndexOutOfBoundsException("Transmission type ${header.transmissionType} not found!")
@@ -205,17 +205,15 @@ object Packets {
                     val inflated = array.inflate()  // Decompress the transmission
                     val transmission = registeredTransmissionTypes[header.transmissionType].constructor(inflated, header.transmissionId, sender)  // Deserialize the transmission
 
-                    listenersLock.lock()
-                    for (listener in listeners) {
-                        listener(transmission, sender)
+                    listenersLock.withLock {
+                        for (listener in listeners) listener(transmission, sender)
+                        incoming.remove(header.transmissionId)
                     }
-                    incoming.remove(header.transmissionId)
-                    listenersLock.unlock()
                 }
             } catch (e: Exception) { Log.err(e) }
         }
 
-        private data class OutgoingTransmission(val packets: Queue<Packet>, val onFinish: (() -> Unit)?, val onError: (() -> Unit)?)
+        private data class OutgoingTransmission(val packets: Queue<Packet>, val onFinish: Runnable?, val onError: (() -> Unit)?)
 
         /**
          * Splits the transmission into packets and queues them for sending.
@@ -223,7 +221,7 @@ object Packets {
          * @param onFinish A lambda that will be run once it is sent, null by default.
          * @param onError A lambda that will be run when no suitable message block is found.
          */
-        fun send(transmission: Transmission, onFinish: (() -> Unit)? = null, onError: (() -> Unit)? = null) {
+        fun send(transmission: Transmission, onFinish: Runnable? = null, onError: (() -> Unit)? = null) {
             val type = registeredTransmissionTypes.indexOfFirst { it.type == transmission::class }
 
             if (transmission.secureOnly && !communicationSystem.secure) throw IllegalArgumentException("Communications system must be secure to send secure-only transmissions!")
@@ -245,9 +243,9 @@ object Packets {
         }
 
         fun removeListener(listener: (Transmission, Int) -> Unit) {
-            listenersLock.lock()
-            listeners.remove(listener)
-            listenersLock.unlock()
+            listenersLock.withLock {
+                if(!listeners.remove(listener)) Log.err("Failed to remove listener")
+            }
         }
     }
 }

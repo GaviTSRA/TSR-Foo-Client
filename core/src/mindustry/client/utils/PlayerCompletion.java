@@ -6,29 +6,8 @@ import mindustry.gen.*;
 
 public class PlayerCompletion implements Autocompleter {
 
-    public Autocompleteable getCompletion(String input) {
-        return bestMatch(input);
-    }
-
-    @Override
-    public boolean matches(String input) {
-        Autocompleteable match = bestMatch(input);
-        if (match == null) {
-            return false;
-        }
-        return match.matches(input) > 0.5f;
-    }
-
-    private Autocompleteable bestMatch(String input) {
-        Seq<Autocompleteable> completions = closest(input);
-        if (completions.isEmpty()) return null;
-        return closest(input).first();
-    }
-
     public Seq<Autocompleteable> closest(String input) {
-        Seq<Player> all =  Groups.player.array.copy();
-        if (all == null) return null;
-        return all.sort(item -> (new PlayerMatcher(item)).matches(input)).map(PlayerMatcher::new);
+        return Groups.player.array.map(PlayerMatcher::new).sort(p -> p.matches(input)).as();
     }
 
     private static class PlayerMatcher implements Autocompleteable {
@@ -45,7 +24,7 @@ public class PlayerCompletion implements Autocompleter {
             String text = getLast(input);
             if (text == null) return 0f;
 
-            float dst = BiasedLevenshtein.biasedLevenshteinInsensitive(text, matchName);
+            float dst = ClientUtils.biasedLevenshtein(text, matchName);
             dst *= -1;
             dst += matchName.length();
             dst /= matchName.length();

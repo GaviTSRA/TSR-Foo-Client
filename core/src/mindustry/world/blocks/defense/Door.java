@@ -36,6 +36,7 @@ public class Door extends Wall{
 
         config(Boolean.class, (DoorBuild base, Boolean open) -> {
             doorSound.at(base);
+            base.effect();
 
             for(DoorBuild entity : base.chained){
                 //skip doors with things in them
@@ -43,18 +44,19 @@ public class Door extends Wall{
                     continue;
                 }
 
+                entity.effect();
                 entity.open = open;
                 pathfinder.updateTile(entity.tile());
-                entity.effect();
             }
         });
     }
 
     @Override
-    public TextureRegion getRequestRegion(BuildPlan req, Eachable<BuildPlan> list){
-        return req.config == Boolean.TRUE ? openRegion : region;
+    public TextureRegion getPlanRegion(BuildPlan plan, Eachable<BuildPlan> list){
+        return plan.config == Boolean.TRUE ? openRegion : region;
     }
 
+    private static int c = 0;
     public class DoorBuild extends Building{
         public boolean open = false;
         public Seq<DoorBuild> chained = new Seq<>();
@@ -100,11 +102,19 @@ public class Door extends Wall{
         }
 
         public void effect(){
-            (open ? closefx : openfx).at(this);
+            (open ? closefx : openfx).at(this, size);
+        }
+
+        public void addChained(){
+            Seq<DoorBuild> found = null;
+            for(var b : proximity){
+                if(b instanceof DoorBuild d){
+                    d.chained.any();
+                }
+            }
         }
 
         public void updateChained(){
-            chained = new Seq<>();
             doorQueue.clear();
             doorQueue.add(this);
 
@@ -138,7 +148,7 @@ public class Door extends Wall{
 
         @Override
         public void tapped(){
-            if((Units.anyEntities(tile) && open) || !origin().timer(timerToggle, 60f)){
+            if((Units.anyEntities(tile) && open) || !origin().timer(timerToggle, 0f)){
                 return;
             }
 

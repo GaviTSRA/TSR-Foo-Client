@@ -21,9 +21,8 @@ import arc.scene.ui.layout.*;
 import arc.struct.*;
 import arc.util.*;
 import mindustry.*;
-import mindustry.client.navigation.*;
+import mindustry.client.claj.*;
 import mindustry.client.ui.*;
-import mindustry.client.utils.*;
 import mindustry.editor.*;
 import mindustry.game.EventType.*;
 import mindustry.gen.*;
@@ -33,7 +32,6 @@ import mindustry.tsr.ui.ProfileManagerDialog;
 import mindustry.ui.*;
 import mindustry.ui.dialogs.*;
 import mindustry.ui.fragments.*;
-import mindustry.world.blocks.storage.*;
 
 import static arc.scene.actions.Actions.*;
 import static mindustry.Vars.*;
@@ -46,7 +44,7 @@ public class UI implements ApplicationListener, Loadable{
     public MenuFragment menufrag;
     public HudFragment hudfrag;
     public ChatFragment chatfrag;
-    public ScriptConsoleFragment scriptfrag;
+    public ConsoleFragment consolefrag;
     public MinimapFragment minimapfrag;
     public PlayerListFragment listfrag;
     public LoadingFragment loadfrag;
@@ -57,7 +55,7 @@ public class UI implements ApplicationListener, Loadable{
     public AboutDialog about;
     public GameOverDialog restart;
     public CustomGameDialog custom;
-    public MapsDialog maps;
+    public EditorMapsDialog maps;
     public LoadDialog load;
     public DiscordDialog discord;
     public JoinDialog join;
@@ -77,12 +75,22 @@ public class UI implements ApplicationListener, Loadable{
     public SchematicsDialog schematics;
     public ModsDialog mods;
     public ColorPicker picker;
+    public EffectsDialog effects;
     public LogicDialog logic;
+    public FullTextDialog fullText;
+    public CampaignCompleteDialog campaignComplete;
 
-    public Cursor drillCursor, unloadCursor;
+    public IntMap<Dialog> followUpMenus;
+
+    public Cursor drillCursor, unloadCursor, targetCursor;
+
+    private @Nullable Element lastAnnouncement;
 
     // Client related
+    public SchematicBrowserDialog schematicBrowser;
     public UnitPicker unitPicker;
+    public ClajManagerDialog clajManager;
+    public ClajJoinDialog clajJoin;
 
     //TSR Client
     public ProfileManagerDialog profileManagerDialog;
@@ -91,13 +99,18 @@ public class UI implements ApplicationListener, Loadable{
         Fonts.loadFonts();
     }
 
-    @Override
-    public void loadAsync(){
-
+    public static void loadColors(){
+        Colors.put("accent", Pal.accent);
+        Colors.put("unlaunched", Color.valueOf("8982ed"));
+        Colors.put("highlight", Pal.accent.cpy().lerp(Color.white, 0.3f));
+        Colors.put("stat", Pal.stat);
+        Colors.put("negstat", Pal.negativeStat);
     }
 
     @Override
     public void loadSync(){
+        loadColors();
+
         Fonts.outline.getData().markupEnabled = true;
         Fonts.def.getData().markupEnabled = true;
         Fonts.def.setOwnsTexture(false);
@@ -131,13 +144,9 @@ public class UI implements ApplicationListener, Loadable{
 
         ClickListener.clicked = () -> Sounds.press.play();
 
-        Colors.put("accent", Pal.accent);
-        Colors.put("unlaunched", Color.valueOf("8982ed"));
-        Colors.put("highlight", Pal.accent.cpy().lerp(Color.white, 0.3f));
-        Colors.put("stat", Pal.stat);
-
         drillCursor = Core.graphics.newCursor("drill", Fonts.cursorScale());
         unloadCursor = Core.graphics.newCursor("unload", Fonts.cursorScale());
+        targetCursor = Core.graphics.newCursor("target", Fonts.cursorScale());
     }
 
     @Override
@@ -154,12 +163,28 @@ public class UI implements ApplicationListener, Loadable{
         Core.scene.act();
         Core.scene.draw();
 
-        if((Core.input.keyTap(KeyCode.mouseLeft) || Core.input.keyTap(KeyCode.mouseRight)) && Core.scene.getKeyboardFocus() instanceof TextField){ // Client adds right click listener
+        if((Core.input.keyTap(KeyCode.mouseLeft) || Core.input.keyTap(KeyCode.mouseRight)) && Core.scene.hasField()){ // Client adds right click listener
             Element e = Core.scene.hit(Core.input.mouseX(), Core.input.mouseY(), true);
             if(!(e instanceof TextField)){
                 Core.scene.setKeyboardFocus(null);
             }
         }
+
+        /* Software cursor. It actually almost works well surprisingly enough
+        var lastCursor = graphics.lastCursor;
+        Log.info("Current cursor: @", lastCursor == Cursor.SystemCursor.arrow ? "arrow" : lastCursor == Cursor.SystemCursor.hand ? "hand" : lastCursor == emptyCursor ? "empty" : "other");
+        if(lastCursor == emptyCursor){ // Software cursor. We show the hardware cursor for an extra frame as otherwise it disappears for a frame. It creates a jarring effect, but I don't know if we can do anything to fix it
+            if(lastNonEmptyCursor != null) graphics.cursor(lastNonEmptyCursor);
+            lastNonEmptyCursor = null;
+            Draw.reset();
+            Draw.proj(camera);
+            Draw.sort(false);
+            softCursor.scale = 4 / renderer.camerascale;
+            Draw.rect(softCursor, input.mouseWorldX(), input.mouseWorldY());
+            Draw.flush();
+        }else{
+            lastNonEmptyCursor = lastCursor;
+        } */
 
         Events.fire(Trigger.uiDrawEnd);
     }
@@ -180,9 +205,10 @@ public class UI implements ApplicationListener, Loadable{
         minimapfrag = new MinimapFragment();
         listfrag = new PlayerListFragment();
         loadfrag = new LoadingFragment();
-        scriptfrag = new ScriptConsoleFragment();
+        consolefrag = new ConsoleFragment();
 
         picker = new ColorPicker();
+        effects = new EffectsDialog();
         editor = new MapEditorDialog();
         controls = new KeybindDialog();
         restart = new GameOverDialog();
@@ -199,16 +225,22 @@ public class UI implements ApplicationListener, Loadable{
         bans = new BansDialog();
         admins = new AdminsDialog();
         traces = new TraceDialog();
-        maps = new MapsDialog();
+        maps = new EditorMapsDialog();
         content = new ContentInfoDialog();
         planet = new PlanetDialog();
         research = new ResearchDialog();
         mods = new ModsDialog();
         schematics = new SchematicsDialog();
+        schematicBrowser = new SchematicBrowserDialog();
         logic = new LogicDialog();
+        fullText = new FullTextDialog();
+        campaignComplete = new CampaignCompleteDialog();
+        followUpMenus = new IntMap<>();
 
         // Client related
         unitPicker = new UnitPicker();
+        clajManager = new ClajManagerDialog();
+        clajJoin = new ClajJoinDialog();
 
 
         Group group = Core.scene.root;
@@ -225,10 +257,10 @@ public class UI implements ApplicationListener, Loadable{
 
         hudfrag.build(hudGroup);
         menufrag.build(menuGroup);
-        chatfrag.container().build(hudGroup);
+        chatfrag.build(hudGroup);
         minimapfrag.build(hudGroup);
         listfrag.build(hudGroup);
-        scriptfrag.container().build(hudGroup);
+        consolefrag.build(hudGroup);
         loadfrag.build(group);
         new FadeInFragment().build(group);
     }
@@ -269,28 +301,34 @@ public class UI implements ApplicationListener, Loadable{
         });
     }
 
-    public void showTextInput(String titleText, String dtext, int textLength, String def, boolean inumeric, Cons<String> confirmed){
+    public void showTextInput(String titleText, String text, int textLength, String def, boolean numbers, Cons<String> confirmed, Runnable closed){
         if(mobile){
             Core.input.getTextInput(new TextInput(){{
                 this.title = (titleText.startsWith("@") ? Core.bundle.get(titleText.substring(1)) : titleText);
                 this.text = def;
-                this.numeric = inumeric;
+                this.numeric = numbers;
                 this.maxLength = textLength;
                 this.accepted = confirmed;
+                this.canceled = closed;
                 this.allowEmpty = false;
             }});
         }else{
             new Dialog(titleText){{
-                cont.margin(30).add(dtext).padRight(6f);
-                TextFieldFilter filter = inumeric ? TextFieldFilter.digitsOnly : (f, c) -> true;
+                cont.margin(30).add(text).padRight(6f);
+                TextFieldFilter filter = numbers ? TextFieldFilter.digitsOnly : (f, c) -> true;
                 TextField field = cont.field(def, t -> {}).size(330f, 50f).get();
-                field.setFilter((f, c) -> field.getText().length() < textLength && filter.acceptChar(f, c));
+                field.setMaxLength(textLength);
+                field.setFilter(filter);
                 buttons.defaults().size(120, 54).pad(4);
-                buttons.button("@cancel", this::hide);
+                buttons.button("@cancel", () -> {
+                    closed.run();
+                    hide();
+                });
                 buttons.button("@ok", () -> {
                     confirmed.get(field.getText());
                     hide();
                 }).disabled(b -> field.getText().isEmpty());
+
                 keyDown(KeyCode.enter, () -> {
                     String text = field.getText();
                     if(!text.isEmpty()){
@@ -298,9 +336,10 @@ public class UI implements ApplicationListener, Loadable{
                         hide();
                     }
                 });
-                keyDown(KeyCode.escape, this::hide);
-                keyDown(KeyCode.back, this::hide);
+
+                closeOnBack(closed);
                 show();
+
                 Core.scene.setKeyboardFocus(field);
                 field.setCursorPosition(def.length());
             }};
@@ -311,33 +350,61 @@ public class UI implements ApplicationListener, Loadable{
         showTextInput(title, text, 32, def, confirmed);
     }
 
-    public void showTextInput(String titleText, String text, int textLength, String def, Cons<String> confirmed){
-        showTextInput(titleText, text, textLength, def, false, confirmed);
+    public void showTextInput(String title, String text, int textLength, String def, Cons<String> confirmed){
+        showTextInput(title, text, textLength, def, false, confirmed);
+    }
+
+    public void showTextInput(String title, String text, int textLength, String def, boolean numeric, Cons<String> confirmed){
+        showTextInput(title, text, textLength, def, numeric, confirmed, () -> {});
     }
 
     public void showInfoFade(String info){
+        showInfoFade(info,  7f);
+    }
+
+    public void showInfoFade(String info, float duration){
+        var cinfo = Core.scene.find("coreinfo");
         Table table = new Table();
         table.touchable = Touchable.disabled;
         table.setFillParent(true);
-        table.marginTop(Core.scene.find("coreinfo").getPrefHeight() / Scl.scl() / 2);
-        table.actions(Actions.fadeOut(7f, Interp.fade), Actions.remove());
+        if(cinfo.visible && !state.isMenu()) table.marginTop(cinfo.getPrefHeight() / Scl.scl() / 2);
+        table.actions(Actions.fadeOut(duration, Interp.fade), Actions.remove());
         table.top().add(info).style(Styles.outlineLabel).padTop(10);
         Core.scene.add(table);
     }
 
+    public void addDescTooltip(Element elem, String description){
+        if(description == null) return;
+
+        elem.addListener(new Tooltip(t -> t.background(Styles.black8).margin(4f).add(description).color(Color.lightGray)){
+            {
+                allowMobile = true;
+            }
+            @Override
+            protected void setContainerPosition(Element element, float x, float y){
+                this.targetActor = element;
+                Vec2 pos = element.localToStageCoordinates(Tmp.v1.set(0, 0));
+                container.pack();
+                container.setPosition(pos.x, pos.y, Align.topLeft);
+                container.setOrigin(0, element.getHeight());
+            }
+        });
+    }
+
     /** Shows a fading label at the top of the screen. */
     public void showInfoToast(String info, float duration){
-        if (ClientUtilsKt.io()) return; // .io admins are known to abuse this
+        var cinfo = Core.scene.find("coreinfo");
         Table table = new Table();
         table.touchable = Touchable.disabled;
         table.setFillParent(true);
-        table.marginTop(Core.scene.find("coreinfo").getPrefHeight() / Scl.scl() / 2);
+        if(cinfo.visible && !state.isMenu()) table.marginTop(cinfo.getPrefHeight() / Scl.scl() / 2);
         table.update(() -> {
             if(state.isMenu()) table.remove();
         });
         table.actions(Actions.delay(duration * 0.9f), Actions.fadeOut(duration * 0.1f, Interp.fade), Actions.remove());
         table.top().table(Styles.black3, t -> t.margin(4).add(info).style(Styles.outlineLabel)).padTop(10);
         Core.scene.add(table);
+        lastAnnouncement = table;
     }
 
     /** Shows a label at some position on the screen. Does not fade. */
@@ -355,7 +422,6 @@ public class UI implements ApplicationListener, Loadable{
 
     /** Shows a label in the world. This label is behind everything. Does not fade. */
     public void showLabel(String info, float duration, float worldx, float worldy){
-        if (ClientUtilsKt.cn() && info.startsWith("Core #") && Vars.world.buildWorld(worldx, worldy) instanceof CoreBlock.CoreBuild) Navigation.navigator.map.put(Strings.parseInt(info.replace("Core #", "")), new Vec2(worldx, worldy));
         var table = new Table(Styles.black3).margin(4);
         table.touchable = Touchable.disabled;
         table.update(() -> {
@@ -422,6 +488,8 @@ public class UI implements ApplicationListener, Loadable{
     }
 
     public void showException(String text, Throwable exc){
+        if(loadfrag == null) return;
+
         loadfrag.hide();
         new Dialog(""){{
             String message = Strings.getFinalMessage(exc);
@@ -492,8 +560,8 @@ public class UI implements ApplicationListener, Loadable{
         dialog.cont.add(text).width(mobile ? 400f : 500f).wrap().pad(4f).get().setAlignment(Align.center, Align.center);
         dialog.buttons.defaults().size(200f, 54f).pad(2f);
         dialog.setFillParent(false);
-        dialog.buttons.button("@cancel", dialog::hide);
-        dialog.buttons.button("@ok", () -> {
+        dialog.buttons.button("@cancel", Icon.cancel, dialog::hide);
+        dialog.buttons.button("@ok", Icon.ok, () -> {
             dialog.hide();
             confirmed.run();
         });
@@ -531,6 +599,10 @@ public class UI implements ApplicationListener, Loadable{
         dialog.show();
     }
 
+    public boolean hasAnnouncement(){
+        return lastAnnouncement != null && lastAnnouncement.parent != null;
+    }
+
     /** Display text in the middle of the screen, then fade out. */
     public void announce(String text){
         announce(text, 3);
@@ -538,6 +610,7 @@ public class UI implements ApplicationListener, Loadable{
 
     /** Display text in the middle of the screen, then fade out. */
     public void announce(String text, float duration){
+        if (Vars.state.map.name().equals("[red]Raid on the latum biolabs") && text.startsWith("[red]Biolab")) return; // This is genuinely the single worst thing I have ever seen in this game
         Table t = new Table(Styles.black3);
         t.touchable = Touchable.disabled;
         t.margin(8f).add(text).style(Styles.outlineLabel).labelAlign(Align.center);
@@ -546,6 +619,7 @@ public class UI implements ApplicationListener, Loadable{
         t.pack();
         t.act(0.1f);
         Core.scene.add(t);
+        lastAnnouncement = t;
     }
 
     public void showOkText(String title, String text, Runnable confirmed){
@@ -560,49 +634,104 @@ public class UI implements ApplicationListener, Loadable{
         dialog.show();
     }
 
+    // TODO REPLACE INTEGER WITH arc.fun.IntCons(int, T) or something like that.
+    public Dialog newMenuDialog(String title, String message, String[][] options, Cons2<Integer, Dialog> buttonListener){
+        return new Dialog(title){{
+            setFillParent(true);
+            removeChild(titleTable);
+            cont.add(titleTable).width(400f);
+
+            cont.row();
+            cont.image().width(400f).pad(2).colspan(2).height(4f).color(Pal.accent).bottom();
+            cont.row();
+            cont.pane(table -> {
+                table.add(message).width(400f).wrap().get().setAlignment(Align.center);
+                table.row();
+
+                int option = 0;
+                for(var optionsRow : options){
+                    if(optionsRow.length == 0) continue;
+                    Table buttonRow = table.row().table().get().row();
+                    int fullWidth = 400 - (optionsRow.length - 1) * 8; // adjust to count padding as well
+                    int width = fullWidth / optionsRow.length;
+                    int lastWidth = fullWidth - width * (optionsRow.length - 1); // take the rest of space for uneven table
+
+                    for(int i = 0; i < optionsRow.length; i++){
+                        if(optionsRow[i] == null) continue;
+
+                        String optionName = optionsRow[i];
+                        int finalOption = option;
+                        buttonRow.button(optionName, () -> buttonListener.get(finalOption, this))
+                                .size(i == optionsRow.length - 1 ? lastWidth : width, 50).pad(4);
+                        option++;
+                    }
+                }
+            }).growX();
+        }};
+    }
+
     /** Shows a menu that fires a callback when an option is selected. If nothing is selected, -1 is returned. */
     public void showMenu(String title, String message, String[][] options, Intc callback){
-        new Dialog(title){{
-            cont.row();
-            cont.image().width(400f).pad(2).colspan(2).height(4f).color(Pal.accent);
-            cont.row();
-            cont.add(message).width(400f).wrap().get().setAlignment(Align.center);
-            cont.row();
+        Dialog dialog = newMenuDialog(title, message, options, (option, myself) -> {
+            callback.get(option);
+            myself.hide();
+        });
+        dialog.closeOnBack(() -> callback.get(-1));
+        dialog.show();
+    }
 
-            int option = 0;
-            for(var optionsRow : options){
-                Table buttonRow = buttons.row().table().get().row();
-                int fullWidth = 400 - (optionsRow.length - 1) * 8; // adjust to count padding as well
-                int width = fullWidth / optionsRow.length;
-                int lastWidth = fullWidth - width * (optionsRow.length - 1); // take the rest of space for uneven table
+    /** Shows a menu that hides when another followUp-menu is shown or when nothing is selected.
+     * @see UI#showMenu(String, String, String[][], Intc) */
+    public void showFollowUpMenu(int menuId, String title, String message, String[][] options, Intc callback) {
+        Dialog dialog = newMenuDialog(title, message, options, (option, myself) -> callback.get(option));
+        dialog.closeOnBack(() -> {
+            followUpMenus.remove(menuId);
+            callback.get(-1);
+        });
 
-                for(int i = 0; i < optionsRow.length; i++){
-                    if(optionsRow[i] == null) continue;
+        Dialog oldDialog = followUpMenus.remove(menuId);
+        if(oldDialog != null){
+            dialog.show(Core.scene, null);
+            oldDialog.hide(null);
+        }else{
+            dialog.show();
+        }
+        followUpMenus.put(menuId, dialog);
+    }
 
-                    String optionName = optionsRow[i];
-                    int finalOption = option;
-                    buttonRow.button(optionName, () -> {
-                        callback.get(finalOption);
-                        hide();
-                    }).size(i == optionsRow.length - 1 ? lastWidth : width, 50).pad(4);
-                    option++;
-                }
-            }
-            closeOnBack(() -> callback.get(-1));
-        }}.show();
+    public void hideFollowUpMenu(int menuId) {
+        if(!followUpMenus.containsKey(menuId)) return;
+        followUpMenus.remove(menuId).hide();
+    }
+
+    public void toggleSchematicMenu() {
+        if (ui.schematicBrowser.isShown()) ui.schematicBrowser.hide();
+        if (ui.schematics.isShown()) ui.schematics.hide();
+        else ui.schematics.show();
+    }
+
+    public void toggleSchematicBrowser() {
+        if (ui.schematics.isShown()) ui.schematics.hide();
+        if (ui.schematicBrowser.isShown()) ui.schematicBrowser.hide();
+        else ui.schematicBrowser.show();
     }
 
     public static String formatAmount(long number){
-        //prevent overflow
-        if(number == Long.MIN_VALUE) number ++;
+        return formatAmount(number, false);
+    }
+
+    public static String formatAmount(long number, boolean extraDP){
+        //prevent things like bars displaying erroneous representations of casted infinities
+        if(number == Long.MAX_VALUE) return "∞";
+        if(number == Long.MIN_VALUE) return "-∞";
 
         long mag = Math.abs(number);
         String sign = number < 0 ? "-" : "";
         if(mag >= 1_000_000_000){
-            return sign + Strings.fixed(mag / 1_000_000_000f, 1) + "[gray]" + billions+ "[]";
+            return sign + Strings.fixed(mag / 1_000_000_000f, 1) + "[gray]" + billions + "[]";
         }else if(mag >= 1_000_000){
             return sign + Strings.fixed(mag / 1_000_000f, 1) + "[gray]" + millions + "[]";
-        }else if(mag >= 10_000){
+        }else if(mag >= (extraDP ? 100_000 : 10_000)){
             return number / 1000 + "[gray]" + thousands + "[]";
         }else if(mag >= 1000){
             return sign + Strings.fixed(mag / 1000f, 1) + "[gray]" + thousands + "[]";

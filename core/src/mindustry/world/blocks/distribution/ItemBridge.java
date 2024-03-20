@@ -1,5 +1,6 @@
 package mindustry.world.blocks.distribution;
 
+import arc.*;
 import arc.graphics.*;
 import arc.graphics.g2d.*;
 import arc.math.*;
@@ -9,7 +10,9 @@ import arc.util.*;
 import arc.util.io.*;
 import mindustry.annotations.Annotations.*;
 import mindustry.core.*;
+import mindustry.entities.*;
 import mindustry.entities.units.*;
+import mindustry.game.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.input.*;
@@ -35,6 +38,7 @@ public class ItemBridge extends Block{
     public boolean pulse = false;
     public float arrowSpacing = 4f, arrowOffset = 2f, arrowPeriod = 0.4f;
     public float arrowTimeScl = 6.2f;
+    public float bridgeWidth = 6.5f;
 
     //for autolink
     public @Nullable ItemBridgeBuild lastBuild;
@@ -43,6 +47,7 @@ public class ItemBridge extends Block{
         super(name);
         update = true;
         solid = true;
+        underBullets = true;
         hasPower = true;
         itemCapacity = 10;
         configurable = true;
@@ -51,24 +56,28 @@ public class ItemBridge extends Block{
         group = BlockGroup.transportation;
         noUpdateDisabled = true;
         copyConfig = false;
+        priority = TargetPriority.transport;
 
         //point2 config is relative
         config(Point2.class, (ItemBridgeBuild tile, Point2 i) -> tile.link = Point2.pack(i.x + tile.tileX(), i.y + tile.tileY()));
         //integer is not
         config(Integer.class, (ItemBridgeBuild tile, Integer i) -> tile.link = i);
+
+        //no reason to keep this in memory
+        Events.on(EventType.ResetEvent.class, e -> lastBuild = null);
     }
 
     @Override
-    public void drawRequestConfigTop(BuildPlan req, Eachable<BuildPlan> list){
+    public void drawPlanConfigTop(BuildPlan plan, Eachable<BuildPlan> list){
         otherReq = null;
         list.each(other -> {
-            if(other.block == this && req != other && req.config instanceof Point2 p && p.equals(other.x - req.x, other.y - req.y)){
+            if(other.block == this && plan != other && plan.config instanceof Point2 p && p.equals(other.x - plan.x, other.y - plan.y)){
                 otherReq = other;
             }
         });
 
         if(otherReq != null){
-            drawBridge(req, otherReq.drawx(), otherReq.drawy(), 0);
+            drawBridge(plan, otherReq.drawx(), otherReq.drawy(), 0);
         }
     }
 
@@ -76,7 +85,7 @@ public class ItemBridge extends Block{
         if(Mathf.zero(Renderer.bridgeOpacity)) return;
         Draw.alpha(Renderer.bridgeOpacity);
 
-        Lines.stroke(8f);
+        Lines.stroke(bridgeWidth);
 
         Tmp.v1.set(ox, oy).sub(req.drawx(), req.drawy()).setLength(tilesize/2f);
 
@@ -155,15 +164,15 @@ public class ItemBridge extends Block{
     @Override
     public void init(){
         super.init();
-        clipSize = Math.max(clipSize, (range + 0.5f) * tilesize * 2);
+        updateClipRadius((range + 0.5f) * tilesize);
     }
 
     @Override
     public void handlePlacementLine(Seq<BuildPlan> plans){
-        for(int i = 0; i < plans.size - 1; i++){
+        for(int i = 0; i < plans.size; i++){
             var cur = plans.get(i);
-            var next = plans.get(i + 1);
-            if(positionsValid(cur.x, cur.y, next.x, next.y)){
+            var next = plans.get(Math.min(Core.input.shift() ? i + range : i + 1, plans.size - 1)); // Bridge weaving is enabled when shift is held
+            if(positionsValid(cur.x, cur.y, next.x, next.y) && !cur.samePos(next)){
                 cur.config = new Point2(next.x - cur.x, next.y - cur.y);
             }
         }
@@ -171,6 +180,7 @@ public class ItemBridge extends Block{
 
     @Override
     public void changePlacementPath(Seq<Point2> points, int rotation){
+        if(Core.input.shift()) return; // Bridge weaving is enabled when shift is held
         Placement.calculateNodes(points, this, rotation, (point, other) -> Math.max(Math.abs(point.x - other.x), Math.abs(point.y - other.y)) <= range);
     }
 
@@ -261,7 +271,7 @@ public class ItemBridge extends Block{
         }
 
         @Override
-        public boolean onConfigureTileTapped(Building other){
+        public boolean onConfigureBuildTapped(Building other){
             //reverse connection
             if(other instanceof ItemBridgeBuild b && b.link == pos()){
                 configure(other.pos());
@@ -318,7 +328,7 @@ public class ItemBridge extends Block{
                     inc.add(pos);
                 }
 
-                warmup = Mathf.approachDelta(warmup, efficiency(), 1f / 30f);
+                warmup = Mathf.approachDelta(warmup, efficiency, 1f / 30f);
                 updateTransport(other.build);
             }
         }
@@ -367,7 +377,7 @@ public class ItemBridge extends Block{
             Draw.rect(endRegion, x, y, i * 90 + 90);
             Draw.rect(endRegion, other.drawx(), other.drawy(), i * 90 + 270);
 
-            Lines.stroke(8f);
+            Lines.stroke(bridgeWidth);
 
             Tmp.v1.set(x, y).sub(other.worldx(), other.worldy()).setLength(tilesize/2f).scl(-1f);
 
@@ -417,7 +427,8 @@ public class ItemBridge extends Block{
 
             if(linkValid(tile, other)){
                 int rel = relativeTo(other);
-                int rel2 = relativeTo(Edges.getFacingEdge(source, this));
+                var facing = Edges.getFacingEdge(source, this);
+                int rel2 = facing == null ? -1 : relativeTo(facing);
 
                 return rel != rel2;
             }
@@ -462,7 +473,6 @@ public class ItemBridge extends Block{
 
         @Override
         public Point2 config(){
-            if (tile == null) return null;  // this happened once somehow
             return Point2.unpack(link).sub(tile.x, tile.y);
         }
 

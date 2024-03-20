@@ -1,5 +1,6 @@
 package mindustry.world.blocks.payloads;
 
+import arc.Core;
 import arc.audio.*;
 import arc.graphics.g2d.*;
 import arc.math.*;
@@ -8,6 +9,7 @@ import arc.struct.*;
 import arc.util.*;
 import arc.util.io.*;
 import mindustry.annotations.Annotations.*;
+import mindustry.client.*;
 import mindustry.content.*;
 import mindustry.entities.*;
 import mindustry.entities.units.*;
@@ -24,7 +26,7 @@ public class PayloadMassDriver extends PayloadBlock{
     public float rotateSpeed = 2f;
     public float length = 89 / 8f;
     public float knockback = 5f;
-    public float reloadTime = 30f;
+    public float reload = 30f;
     public float chargeTime = 100f;
     public float maxPayloadSize = 3;
     public float grabWidth = 8f, grabHeight = 11/4f;
@@ -61,6 +63,7 @@ public class PayloadMassDriver extends PayloadBlock{
         rotate = true;
         outputsPayload = true;
         group = BlockGroup.units;
+        regionRotated1 = 1;
 
         //point2 is relative
         config(Point2.class, (PayloadDriverBuild tile, Point2 point) -> tile.link = Point2.pack(point.x + tile.tileX(), point.y + tile.tileY()));
@@ -70,15 +73,16 @@ public class PayloadMassDriver extends PayloadBlock{
     @Override
     public void init(){
         super.init();
-        clipSize = Math.max(clipSize, range*2f + tilesize*size);
+        updateClipRadius(range);
     }
 
     @Override
     public void setStats(){
         super.setStats();
 
-        stats.add(Stat.payloadCapacity, maxPayloadSize, StatUnit.blocksSquared);
-        stats.add(Stat.reload, 60f / (chargeTime + reloadTime), StatUnit.seconds);
+        stats.add(Stat.payloadCapacity, StatValues.squared(maxPayloadSize, StatUnit.blocksSquared));
+        stats.add(Stat.reload, 60f / (chargeTime + reload), StatUnit.perSecond);
+        stats.add(Stat.shootRange, range / tilesize, StatUnit.blocks);
     }
 
     @Override
@@ -87,11 +91,11 @@ public class PayloadMassDriver extends PayloadBlock{
     }
 
     @Override
-    public void drawRequestRegion(BuildPlan req, Eachable<BuildPlan> list){
-        Draw.rect(baseRegion, req.drawx(), req.drawy());
-        Draw.rect(topRegion, req.drawx(), req.drawy());
-        Draw.rect(outRegion, req.drawx(), req.drawy(), req.rotation * 90);
-        Draw.rect(region, req.drawx(), req.drawy());
+    public void drawPlanRegion(BuildPlan plan, Eachable<BuildPlan> list){
+        Draw.rect(baseRegion, plan.drawx(), plan.drawy());
+        Draw.rect(topRegion, plan.drawx(), plan.drawy());
+        Draw.rect(outRegion, plan.drawx(), plan.drawy(), plan.rotation * 90);
+        Draw.rect(region, plan.drawx(), plan.drawy());
     }
 
     @Override
@@ -101,8 +105,8 @@ public class PayloadMassDriver extends PayloadBlock{
         Drawf.dashCircle(x * tilesize, y * tilesize, range, Pal.accent);
 
         //check if a mass driver is selected while placing this driver
-        if(!control.input.frag.config.isShown()) return;
-        Building selected = control.input.frag.config.getSelectedTile();
+        if(!control.input.config.isShown()) return;
+        Building selected = control.input.config.getSelected();
         if(selected == null || selected.block != this || !selected.within(x * tilesize, y * tilesize, range)) return;
 
         //if so, draw a dotted line towards it while it is in range
@@ -127,7 +131,7 @@ public class PayloadMassDriver extends PayloadBlock{
     public class PayloadDriverBuild extends PayloadBlockBuild<Payload>{
         public int link = -1;
         public float turretRotation = 90;
-        public float reload = 0f, charge = 0f;
+        public float reloadCounter = 0f, charge = 0f;
         public float targetSize = grabWidth*2f, curSize = targetSize;
         public float payLength = 0f, effectDelayTimer = -1f;
         public PayloadDriverBuild lastOther;
@@ -136,6 +140,18 @@ public class PayloadMassDriver extends PayloadBlock{
         public PayloadDriverState state = idle;
         public Queue<Building> waitingShooters = new Queue<>();
         public Payload recPayload;
+
+        @Override
+        public void add(){
+            super.add();
+            Core.app.post(() -> ClientVars.payloadMassDrivers.add(this)); // This is cleared on the first frame after world load, add a frame later to bypass that
+        }
+
+        @Override
+        public void remove(){
+            super.remove();
+            ClientVars.payloadMassDrivers.remove(this, true);
+        }
 
         public Building currentShooter(){
             return waitingShooters.isEmpty() ? null : waitingShooters.first();
@@ -166,7 +182,7 @@ public class PayloadMassDriver extends PayloadBlock{
                 var other = lastOther;
                 float cx = Angles.trnsx(other.turretRotation, length), cy = Angles.trnsy(other.turretRotation, length);
                 receiveEffect.at(x - cx/2f, y - cy/2f, turretRotation);
-                reload = 1f;
+                reloadCounter = 1f;
                 Effect.shake(shake, shake, this);
             }
 
@@ -177,8 +193,8 @@ public class PayloadMassDriver extends PayloadBlock{
             }
 
             //reload regardless of state
-            reload -= edelta() / reloadTime;
-            if(reload < 0) reload = 0f;
+            reloadCounter -= edelta() / reload;
+            if(reloadCounter < 0) reloadCounter = 0f;
 
             var current = currentShooter();
 
@@ -187,7 +203,7 @@ public class PayloadMassDriver extends PayloadBlock{
                 !(
                     current instanceof PayloadDriverBuild entity &&
                     current.isValid() &&
-                    entity.consValid() && entity.block == block &&
+                    entity.efficiency > 0 && entity.block == block &&
                     entity.link == pos() && within(current, range)
                 )){
                 waitingShooters.removeFirst();
@@ -218,7 +234,7 @@ public class PayloadMassDriver extends PayloadBlock{
             }
 
             //skip when there's no power
-            if(!consValid()){
+            if(efficiency <= 0f){
                 return;
             }
 
@@ -234,7 +250,7 @@ public class PayloadMassDriver extends PayloadBlock{
                 }
 
                 //align to shooter rotation
-                turretRotation = Angles.moveToward(turretRotation, angleTo(currentShooter()), rotateSpeed * efficiency());
+                turretRotation = Angles.moveToward(turretRotation, angleTo(currentShooter()), rotateSpeed * efficiency);
             }else if(state == shooting){
                 //if there's nothing to shoot at OR someone wants to shoot at this thing, bail
                 if(!hasLink || (!waitingShooters.isEmpty() && payload == null)){
@@ -247,7 +263,7 @@ public class PayloadMassDriver extends PayloadBlock{
 
                 payRotation = Angles.moveToward(payRotation, turretRotation, payloadRotateSpeed * delta());
                 if(loaded){
-                    float loadLength = length - reload*knockback;
+                    float loadLength = length - reloadCounter *knockback;
                     payLength += payloadSpeed * delta();
                     if(payLength >= loadLength){
                         payLength = loadLength;
@@ -266,14 +282,14 @@ public class PayloadMassDriver extends PayloadBlock{
                         other.waitingShooters.addLast(this);
                     }
 
-                    if(reload <= 0){
+                    if(reloadCounter <= 0){
                         //align to target location
-                        turretRotation = Angles.moveToward(turretRotation, targetRotation, rotateSpeed * efficiency());
+                        turretRotation = Angles.moveToward(turretRotation, targetRotation, rotateSpeed * efficiency);
 
                         //fire when it's the first in the queue and angles are ready.
                         if(other.currentShooter() == this &&
                         other.state == accepting &&
-                        other.reload <= 0f &&
+                        other.reloadCounter <= 0f &&
                         Angles.within(turretRotation, targetRotation, 1f) && Angles.within(other.turretRotation, targetRotation + 180f, 1f)){
                             charge += edelta();
                             charging = true;
@@ -312,7 +328,7 @@ public class PayloadMassDriver extends PayloadBlock{
                                 payLength = 0f;
                                 loaded = false;
                                 state = idle;
-                                reload = 1f;
+                                reloadCounter = 1f;
                             }
                         }
                     }
@@ -322,7 +338,7 @@ public class PayloadMassDriver extends PayloadBlock{
 
         @Override
         public double sense(LAccess sensor){
-            if(sensor == LAccess.progress) return Mathf.clamp(1f - reload / reloadTime);
+            if(sensor == LAccess.progress) return Mathf.clamp(1f - reloadCounter / reload);
             return super.sense(sensor);
         }
 
@@ -340,8 +356,8 @@ public class PayloadMassDriver extends PayloadBlock{
         @Override
         public void draw(){
             float
-            tx = x + Angles.trnsx(turretRotation + 180f, reload * knockback),
-            ty = y + Angles.trnsy(turretRotation + 180f, reload * knockback), r = turretRotation - 90;
+            tx = x + Angles.trnsx(turretRotation + 180f, reloadCounter * knockback),
+            ty = y + Angles.trnsy(turretRotation + 180f, reloadCounter * knockback), r = turretRotation - 90;
 
             Draw.rect(baseRegion, x, y);
 
@@ -430,7 +446,7 @@ public class PayloadMassDriver extends PayloadBlock{
         }
 
         @Override
-        public boolean onConfigureTileTapped(Building other){
+        public boolean onConfigureBuildTapped(Building other){
             if(this == other){
                 if(link == -1) deselect();
                 configure(-1);
@@ -453,7 +469,7 @@ public class PayloadMassDriver extends PayloadBlock{
             return super.acceptPayload(source, payload) && payload.size() <= maxPayloadSize * tilesize;
         }
 
-        protected boolean linkValid(){
+        public boolean linkValid(){
             return link != -1 && world.build(this.link) instanceof PayloadDriverBuild other && other.block == block && other.team == team && within(other, range);
         }
 
@@ -475,7 +491,7 @@ public class PayloadMassDriver extends PayloadBlock{
             write.f(turretRotation);
             write.b((byte)state.ordinal());
 
-            write.f(reload);
+            write.f(reloadCounter);
             write.f(charge);
             write.bool(loaded);
             write.bool(charging);
@@ -489,7 +505,7 @@ public class PayloadMassDriver extends PayloadBlock{
             state = PayloadDriverState.all[read.b()];
 
             if(revision >= 1){
-                reload = read.f();
+                reloadCounter = read.f();
                 charge = read.f();
                 loaded = read.bool();
                 charging = read.bool();

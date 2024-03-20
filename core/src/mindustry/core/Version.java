@@ -22,12 +22,17 @@ public class Version{
     public static boolean enabled = true;
     /** Foo's update url used for... updating */
     public static String updateUrl = "";
+    /** Foo's asset repo, commit ref used for downloading audio on the go */
+    public static String assetUrl = "", assetRef = "";
     /** Foo's version string */
     public static String clientVersion = "v1.0.0, Jan. 1, 1970";
+    /** Allows for mods to detect the presence of the client */
+    @SuppressWarnings("unused") private static boolean foos;
 
     public static String path(){
-        return Version.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+        return Version.class.getProtectionDomain().getCodeSource().getLocation().getPath().replace('\\', '/');
     }
+
     public static void init(){
         if(!enabled) return;
 
@@ -37,12 +42,13 @@ public class Version{
         PropertiesUtils.load(map, file.reader());
 
         updateUrl = map.get("updateUrl");
-        clientVersion = map.get("clientVersion");
+        assetUrl = map.get("assetUrl");
+        assetRef = map.get("assetRef");
+        if(map.get("clientVersion") != null) clientVersion = map.get("clientVersion"); // This is seemingly null for one person for some reason. I don't know.
         type = map.get("type");
         number = Integer.parseInt(map.get("number", "4"));
         modifier = map.get("modifier");
-        String filepath = Version.class.getProtectionDomain().getCodeSource().getLocation().getPath();
-        if (filepath.contains("/steamapps/common/Mindustry/")) modifier += " steam";
+        if(path().contains("/steamapps/common/Mindustry/")) modifier += " steam";
         if(map.get("build").contains(".")){
             String[] split = map.get("build").split("\\.");
             try{
@@ -57,8 +63,13 @@ public class Version{
         }
     }
 
-    /** @return whether the version is greater than the specified version string, e.g. "120.1"*/
+    /** @return whether the current game version is greater than the specified version string, e.g. "120.1"*/
     public static boolean isAtLeast(String str){
+        return isAtLeast(build, revision, str);
+    }
+
+    /** @return whether the version numbers are greater than the specified version string, e.g. "120.1"*/
+    public static boolean isAtLeast(int build, int revision, String str){
         if(build <= 0 || str == null || str.isEmpty()) return true;
 
         int dot = str.indexOf('.');
@@ -79,6 +90,6 @@ public class Version{
         if(build == -1){
             return "custom build";
         }
-        return (type.equals("official") ? modifier : type) + " build " + build + (revision == 0 ? "" : "." + revision) + "\n(Client Version: " + (clientVersion.equals("v0.0.0") ? "Dev" : clientVersion) + ")";
+        return (type.equals("official") ? modifier : type) + " build " + build + (revision == 0 ? "" : "." + revision) + "\n(Foo's Client Version: " + (clientVersion.equals("v0.0.0") ? "Dev" : clientVersion) + ")";
     }
 }

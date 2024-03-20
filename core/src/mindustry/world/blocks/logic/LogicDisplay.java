@@ -6,6 +6,7 @@ import arc.graphics.g2d.*;
 import arc.graphics.gl.*;
 import arc.struct.*;
 import arc.util.*;
+import mindustry.*;
 import mindustry.annotations.Annotations.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
@@ -17,23 +18,28 @@ public class LogicDisplay extends Block{
     public static final byte
         commandClear = 0,
         commandColor = 1,
-        commandStroke = 2,
-        commandLine = 3,
-        commandRect = 4,
-        commandLineRect = 5,
-        commandPoly = 6,
-        commandLinePoly = 7,
-        commandTriangle = 8,
-        commandImage = 9;
+        //virtual command, unpacked in instruction
+        commandColorPack = 2,
+        commandStroke = 3,
+        commandLine = 4,
+        commandRect = 5,
+        commandLineRect = 6,
+        commandPoly = 7,
+        commandLinePoly = 8,
+        commandTriangle = 9,
+        commandImage = 10,
+        commandCharacter = 11;
 
     public int maxSides = 25;
 
     public int displaySize = 64;
+    public float scaleFactor = 1f;
 
     public LogicDisplay(String name){
         super(name);
         update = true;
         solid = true;
+        canOverdrive = false;
         group = BlockGroup.logic;
         drawDisabled = false;
         envEnabled = Env.any;
@@ -54,7 +60,10 @@ public class LogicDisplay extends Block{
 
         @Override
         public void draw(){
-//            super.draw(); Don't draw borders
+            if (Core.settings.getBool("drawdisplayborder")) super.draw();
+
+            //don't even bother processing anything when displays are off.
+            if(!Vars.renderer.drawDisplays) return;
 
             Draw.draw(Draw.z(), () -> {
                 if(buffer == null){
@@ -65,6 +74,7 @@ public class LogicDisplay extends Block{
                 }
             });
 
+            //don't bother processing commands if displays are off
             if(!commands.isEmpty()){
                 Draw.draw(Draw.z(), () -> {
                     Tmp.m1.set(Draw.proj());
@@ -89,7 +99,13 @@ public class LogicDisplay extends Block{
                             case commandTriangle -> Fill.tri(x, y, p1, p2, p3, p4);
                             case commandColor -> Draw.color(this.color = Color.toFloatBits(x, y, p1, p2));
                             case commandStroke -> Lines.stroke(this.stroke = x);
-                            case commandImage -> Draw.rect(Fonts.logicIcon(p1), x, y, p2, p2, p3);
+                            case commandImage -> {
+                                var icon = Fonts.logicIcon(p1);
+                                Draw.rect(Fonts.logicIcon(p1), x, y, p2, p2 / icon.ratio(), p3);
+                            }
+                            case commandCharacter -> {
+                                //TODO
+                            }
                         }
                     }
 
@@ -102,7 +118,11 @@ public class LogicDisplay extends Block{
             Draw.blend(Blending.disabled);
             Draw.draw(Draw.z(), () -> {
                 if(buffer != null){
-                    Draw.rect(Draw.wrap(buffer.getTexture()), x, y, 32 * size * Draw.scl, -32 * size * Draw.scl);
+                    if (Core.settings.getBool("drawdisplayborder")) Draw.rect(Draw.wrap(buffer.getTexture()), x, y, buffer.getWidth() * scaleFactor * Draw.scl, -buffer.getHeight() * scaleFactor * Draw.scl);
+                    else Draw.rect(Draw.wrap(buffer.getTexture()), x, y, 32 * size * Draw.scl, -32 * size * Draw.scl);
+
+//                  FINISHME: Line below is vanilla, make it work with the client version above somehow.
+//
                 }
             });
             Draw.blend();
@@ -125,6 +145,8 @@ public class LogicDisplay extends Block{
     public enum GraphicsType{
         clear,
         color,
+        //virtual
+        col,
         stroke,
         line,
         rect,
@@ -132,7 +154,8 @@ public class LogicDisplay extends Block{
         poly,
         linePoly,
         triangle,
-        image;
+        image,
+        ;//character;
 
         public static final GraphicsType[] all = values();
     }

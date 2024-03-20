@@ -128,25 +128,32 @@ public abstract class BaseProcessor extends AbstractProcessor{
         builder.fieldSpecs.sort(Structs.comparing(f -> f.name));
 
         JavaFile file = JavaFile.builder(packageName, builder.build()).skipJavaLangImports(true).build();
+        String writeString;
 
-        String out = file.toString();
         if(imports != null){
             imports = imports.map(m -> Seq.with(m.split("\n")).sort().toString("\n"));
             imports.sort();
+            String rawSource = file.toString();
             Seq<String> result = new Seq<>();
-            for(String s : out.split("\n", -1)){
+            for(String s : rawSource.split("\n", -1)){
                 result.add(s);
                 if(s.startsWith("package ")){
                     result.add("");
-                    result.addAll(imports);
+                    for (String i : imports){
+                        result.add(i);
+                    }
                 }
             }
-            out = result.toString("\n");
+
+            writeString = result.toString("\n");
+        }else{
+            writeString = file.toString();
         }
+
         JavaFileObject object = filer.createSourceFile(file.packageName + "." + file.typeSpec.name, file.typeSpec.originatingElements.toArray(new Element[0]));
-        Writer writer = object.openWriter();
-        writer.write(out);
-        writer.close();
+        Writer stream = object.openWriter();
+        stream.write(writeString);
+        stream.close();
     }
 
     public Seq<Selement> elements(Class<? extends Annotation> type){
@@ -164,8 +171,11 @@ public abstract class BaseProcessor extends AbstractProcessor{
     }
 
     public Seq<Smethod> methods(Class<? extends Annotation> type){
-        return Seq.with(env.getElementsAnnotatedWith(type)).select(e -> e instanceof ExecutableElement)
-        .map(e -> new Smethod((ExecutableElement)e));
+        Seq<Smethod> out = new Seq<>(Smethod.class);
+        for(Element e : env.getElementsAnnotatedWith(type)){
+            if(e instanceof ExecutableElement) out.add(new Smethod((ExecutableElement)e));
+        }
+        return out;
     }
 
     public static void err(String message){

@@ -3,7 +3,7 @@ package mindustry.annotations.misc;
 import arc.*;
 import arc.graphics.g2d.*;
 import arc.struct.*;
-import arc.struct.ObjectMap.*;
+import arc.util.*;
 import com.squareup.javapoet.*;
 import mindustry.annotations.Annotations.*;
 import mindustry.annotations.*;
@@ -11,6 +11,7 @@ import mindustry.annotations.util.*;
 
 import javax.annotation.processing.*;
 import javax.lang.model.element.*;
+import java.util.*;
 
 @SupportedAnnotationTypes("mindustry.annotations.Annotations.Load")
 public class LoadRegionProcessor extends BaseProcessor{
@@ -31,13 +32,19 @@ public class LoadRegionProcessor extends BaseProcessor{
                 err("@LoadRegion field must be public", field);
             }
 
-            fieldMap.get(field.enclosingType(), Seq::new).add(field);
+            fieldMap.get(field.enclosingType(), () -> new Seq<>(Svar.class)).add(field);
         }
 
-        for(Entry<Stype, Seq<Svar>> entry : fieldMap){
-            method.beginControlFlow("if(content instanceof $L)", entry.key.fullName());
 
-            for(Svar field : entry.value){
+        Seq<Stype> entries = new Seq<Stype>(Stype.class).addAll(fieldMap.keys());
+        Arrays.sort(entries.items, 0, entries.size, Structs.comparing(Stype::name));
+
+        for(Stype type : entries){
+            Seq<Svar> fields = fieldMap.get(type);
+            Arrays.sort(fields.items, 0, fields.size, Structs.comparing(Svar::name));
+            method.beginControlFlow("if(content instanceof $L)", type.fullName());
+
+            for(Svar field : fields){
                 Load an = field.annotation(Load.class);
                 //get # of array dimensions
                 int dims = count(field.mirror().toString(), "[]");
@@ -46,7 +53,7 @@ public class LoadRegionProcessor extends BaseProcessor{
 
                 //not an array
                 if(dims == 0){
-                    method.addStatement("(($L)content).$L = $T.atlas.find($L$L)", entry.key.fullName(), field.name(), Core.class, parse(an.value()), fallbackString);
+                    method.addStatement("(($L)content).$L = $T.atlas.find($L$L)", type.fullName(), field.name(), Core.class, parse(an.value()), fallbackString);
                 }else{
                     //is an array, create length string
                     int[] lengths = an.lengths();
@@ -59,7 +66,7 @@ public class LoadRegionProcessor extends BaseProcessor{
                     StringBuilder lengthString = new StringBuilder();
                     for(int value : lengths) lengthString.append("[").append(value).append("]");
 
-                    method.addStatement("(($T)content).$L = new $T$L", entry.key.tname(), field.name(), TextureRegion.class, lengthString.toString());
+                    method.addStatement("(($T)content).$L = new $T$L", type.tname(), field.name(), TextureRegion.class, lengthString.toString());
 
                     for(int i = 0; i < dims; i++){
                         method.beginControlFlow("for(int INDEX$L = 0; INDEX$L < $L; INDEX$L ++)", i, i, lengths[i], i);
@@ -70,7 +77,7 @@ public class LoadRegionProcessor extends BaseProcessor{
                         indexString.append("[INDEX").append(i).append("]");
                     }
 
-                    method.addStatement("(($T)content).$L$L = $T.atlas.find($L$L)", entry.key.tname(), field.name(), indexString.toString(), Core.class, parse(an.value()), fallbackString);
+                    method.addStatement("(($T)content).$L$L = $T.atlas.find($L$L)", type.tname(), field.name(), indexString.toString(), Core.class, parse(an.value()), fallbackString);
 
                     for(int i = 0; i < dims; i++){
                         method.endControlFlow();

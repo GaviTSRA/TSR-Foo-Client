@@ -8,11 +8,15 @@ import arc.math.*;
 import arc.math.geom.*;
 import arc.scene.ui.layout.*;
 import arc.util.*;
+import mindustry.*;
 import mindustry.content.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.type.*;
 import mindustry.ui.*;
+import mindustry.world.meta.*;
+
+import static mindustry.Vars.*;
 
 public class ForceFieldAbility extends Ability{
     /** Shield radius. */
@@ -23,6 +27,10 @@ public class ForceFieldAbility extends Ability{
     public float max = 200f;
     /** Cooldown after the shield is broken, in ticks. */
     public float cooldown = 60f * 5;
+    /** Sides of shield polygon. */
+    public int sides = 6;
+    /** Rotation of shield. */
+    public float rotation = 0f;
 
     /** State. */
     protected float radiusScale, alpha;
@@ -31,7 +39,7 @@ public class ForceFieldAbility extends Ability{
     private static Unit paramUnit;
     private static ForceFieldAbility paramField;
     private static final Cons<Bullet> shieldConsumer = trait -> {
-        if(trait.team != paramUnit.team && trait.type.absorbable && Intersector.isInsideHexagon(paramUnit.x, paramUnit.y, realRad * 2f, trait.x(), trait.y()) && paramUnit.shield > 0){
+        if(trait.team != paramUnit.team && trait.type.absorbable && Intersector.isInRegularPolygon(paramField.sides, paramUnit.x, paramUnit.y, realRad, paramField.rotation, trait.x(), trait.y()) && paramUnit.shield > 0){
             trait.absorb();
             Fx.absorb.at(trait);
 
@@ -54,7 +62,28 @@ public class ForceFieldAbility extends Ability{
         this.cooldown = cooldown;
     }
 
+    public ForceFieldAbility(float radius, float regen, float max, float cooldown, int sides, float rotation){
+        this.radius = radius;
+        this.regen = regen;
+        this.max = max;
+        this.cooldown = cooldown;
+        this.sides = sides;
+        this.rotation = rotation;
+    }
+
     ForceFieldAbility(){}
+
+    @Override
+    public void addStats(Table t){
+        t.add("[lightgray]" + Stat.health.localized() + ": [white]" + Math.round(max));
+        t.row();
+        t.add("[lightgray]" + Stat.shootRange.localized() + ": [white]" +  Strings.autoFixed(radius / tilesize, 2) + " " + StatUnit.blocks.localized());
+        t.row();
+        t.add("[lightgray]" + Stat.repairSpeed.localized() + ": [white]" + Strings.autoFixed(regen * 60f, 2) + StatUnit.perSecond.localized());
+        t.row();
+        t.add("[lightgray]" + Stat.cooldownTime.localized() + ": [white]" + Strings.autoFixed(cooldown / 60f, 2) + " " + StatUnit.seconds.localized());
+        t.row();
+    }
 
     @Override
     public void update(Unit unit){
@@ -85,27 +114,33 @@ public class ForceFieldAbility extends Ability{
 
             Draw.color(unit.team.color, Color.white, Mathf.clamp(alpha * UnitType.alpha));
 
-            if(Core.settings.getBool("animatedshields")){
+            if(Vars.renderer.animateShields){
                 Draw.alpha(Mathf.clamp(UnitType.alpha * 2));
-                Fill.poly(unit.x, unit.y, 6, realRad);
+                Fill.poly(unit.x, unit.y, sides, realRad, rotation);
                 Draw.alpha(1f);
             }else{
+                Draw.z(Layer.shields);
                 Lines.stroke(1.5f);
                 Draw.alpha(0.09f * UnitType.alpha);
-                Fill.poly(unit.x, unit.y, 6, radius);
+                Fill.poly(unit.x, unit.y, sides, radius, rotation);
                 Draw.alpha(UnitType.alpha);
-                Lines.poly(unit.x, unit.y, 6, radius);
+                Lines.poly(unit.x, unit.y, sides, radius, rotation);
             }
         }
     }
 
     @Override
     public void displayBars(Unit unit, Table bars){
-        bars.add(new Bar("stat.shieldhealth", Pal.accent, () -> unit.shield / max)).row();
+        bars.add(new Bar(() -> Core.bundle.get("stat.shieldhealth") + " (" + unit.shield + ")", () -> Pal.accent, () -> unit.shield / max)).row();
     }
 
     public void checkRadius(Unit unit){
         //timer2 is used to store radius scale as an effect
         realRad = radiusScale * radius;
+    }
+
+    @Override
+    public String localized(){
+        return Strings.format("@ (@ health)", super.localized(), max);
     }
 }

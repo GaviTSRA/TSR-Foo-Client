@@ -6,9 +6,9 @@ import arc.graphics.*;
 import arc.graphics.g2d.*;
 import arc.graphics.g2d.TextureAtlas.*;
 import arc.math.geom.*;
+import arc.mock.*;
 import arc.struct.*;
 import arc.util.*;
-import arc.util.Log.*;
 import arc.util.io.*;
 import mindustry.*;
 import mindustry.content.*;
@@ -27,10 +27,12 @@ public class ImagePacker{
         //makes PNG loading slightly faster
         ArcNativesLoader.load();
 
-        Log.logger = new NoopLogHandler();
+        Core.settings = new MockSettings();
+//        Log.logger = new NoopLogHandler();
         Vars.content = new ContentLoader();
         Vars.content.createBaseContent();
-        Log.logger = new DefaultLogHandler();
+        Vars.content.init();
+//        Log.logger = new DefaultLogHandler();
 
         Fi.get("../../../assets-raw/sprites_out").walk(path -> {
             if(!path.extEquals("png")) return;
@@ -77,6 +79,11 @@ public class ImagePacker{
             }
 
             @Override
+            public PixmapRegion getPixmap(AtlasRegion region){
+                return new PixmapRegion(get(region.name));
+            }
+
+            @Override
             public boolean has(String s){
                 return cache.containsKey(s);
             }
@@ -85,6 +92,7 @@ public class ImagePacker{
         Draw.scl = 1f / Core.atlas.find("scale_marker").width;
 
         Time.mark();
+        Vars.content.load();
         Generators.run();
         Log.info("&ly[Generator]&lc Total time to generate: &lg@&lcms", Time.elapsed());
 
@@ -131,7 +139,7 @@ public class ImagePacker{
 
         Seq<UnlockableContent> lookupCont = new Seq<>();
 
-        for(ContentType t : GlobalConstants.lookableContent){
+        for(ContentType t : GlobalVars.lookableContent){
             lookupCont.addAll(Vars.content.<UnlockableContent>getBy(t).select(UnlockableContent::logicVisible));
         }
 
@@ -145,7 +153,7 @@ public class ImagePacker{
 
         if(logicidfile.exists()){
             try(DataInputStream in = new DataInputStream(logicidfile.readByteStream())){
-                for(ContentType ctype : GlobalConstants.lookableContent){
+                for(ContentType ctype : GlobalVars.lookableContent){
                     short amount = in.readShort();
                     for(int i = 0; i < amount; i++){
                         String name = in.readUTF();
@@ -180,7 +188,7 @@ public class ImagePacker{
 
         //write the resulting IDs
         try(DataOutputStream out = new DataOutputStream(logicidfile.write(false, 2048))){
-            for(ContentType t : GlobalConstants.lookableContent){
+            for(ContentType t : GlobalVars.lookableContent){
                 Seq<UnlockableContent> all = idToContent[t.ordinal()].values().toArray().sort(u -> registered[t.ordinal()].get(u));
                 out.writeShort(all.size);
                 for(UnlockableContent u : all){
@@ -200,22 +208,36 @@ public class ImagePacker{
         Log.info("&ly[Generator]&lc Time to generate &lm@&lc: &lg@&lcms", name, Time.timeSinceMillis(start));
     }
 
+    static Pixmap get(String name, boolean copy){
+        return get(Core.atlas.find(name), copy);
+    }
+
     static Pixmap get(String name){
-        return get(Core.atlas.find(name));
+        return get(name, true);
     }
 
     static boolean has(String name){
         return Core.atlas.has(name);
     }
 
-    static Pixmap get(TextureRegion region){
+    static Pixmap get(TextureRegion region, boolean copy){
         validate(region);
 
-        return cache.get(((AtlasRegion)region).name).pixmap.copy();
+        Pixmap pix = cache.get(((AtlasRegion)region).name).pixmap;
+        return copy ? pix.copy() : pix;
+    }
+
+    static Pixmap get(TextureRegion region){
+        return get(region, true);
     }
 
     static void save(Pixmap pix, String path){
+        save(pix, path, false);
+    }
+
+    static void save(Pixmap pix, String path, boolean dispose){
         Fi.get(path + ".png").writePng(pix);
+        if(dispose) pix.dispose();
     }
 
     static void drawCenter(Pixmap pix, Pixmap other){
@@ -226,7 +248,7 @@ public class ImagePacker{
         Pixmap scaled = new Pixmap(size, size);
         //TODO bad linear scaling
         scaled.draw(pix, 0, 0, pix.width, pix.height, 0, 0, size, size, true, true);
-        save(scaled, name);
+        save(scaled, name, true);
     }
 
     static void drawScaledFit(Pixmap base, Pixmap image){
@@ -241,11 +263,19 @@ public class ImagePacker{
     }
 
     static void replace(String name, Pixmap image){
-        Fi.get(name + ".png").writePng(image);
+        replace(name, image, false);
+    }
+
+    static void replace(String name, Pixmap image, boolean dispose){
+        save(image, name, dispose);
         ((GenRegion)Core.atlas.find(name)).path.delete();
     }
 
     static void replace(TextureRegion region, Pixmap image){
+        replace(region, image, false);
+    }
+
+    static void replace(TextureRegion region, Pixmap image, boolean dispose){
         replace(((GenRegion)region).name, image);
     }
 

@@ -7,22 +7,17 @@ import arc.graphics.*;
 import arc.math.*;
 import arc.math.geom.*;
 import arc.struct.*;
-import arc.util.*;
 import arc.util.CommandHandler.*;
+import arc.util.*;
 import arc.util.io.*;
 import arc.util.serialization.*;
-import kotlin.text.*;
 import mindustry.*;
-import mindustry.ai.formations.*;
-import mindustry.ai.formations.patterns.*;
-import mindustry.ai.types.*;
 import mindustry.annotations.Annotations.*;
 import mindustry.client.*;
 import mindustry.client.communication.*;
 import mindustry.client.utils.*;
 import mindustry.core.GameState.*;
 import mindustry.entities.*;
-import mindustry.entities.units.*;
 import mindustry.game.EventType.*;
 import mindustry.game.*;
 import mindustry.game.Teams.*;
@@ -33,6 +28,8 @@ import mindustry.logic.*;
 import mindustry.net.Administration.*;
 import mindustry.net.*;
 import mindustry.net.Packets.*;
+import mindustry.ui.*;
+import mindustry.ui.fragments.*;
 import mindustry.world.*;
 import mindustry.world.modules.*;
 
@@ -45,9 +42,12 @@ import static mindustry.Vars.*;
 
 public class NetClient implements ApplicationListener{
     private static final float dataTimeout = 60 * 30; // Give up after 30s (vanilla is 20s)
-    private static final float playerSyncTime = 5;
+    /** ticks between syncs, e.g. 5 means 60/5 = 12 syncs/sec*/
+    private static final float playerSyncTime = 4;
     private static final Reads dataReads = new Reads(null);
-    private static final Pattern coordPattern = Pattern.compile("\\S*?(\\d+)(?:\\[[^]]*])*(?:\\s|,)+(?:\\[[^]]*])*(\\d+)\\S*"); // This regex is a mess, it captures the coords into $1 and $2 while $0 contains all surrounding text as well. https://regex101.com is the superior regex tester
+    private static final Pattern wholeCoordPattern = Pattern.compile("[^]\\s]*?(\\d+)(?:\\[[^]]*])*(?:\\s|,)+(?:\\[[^]]*])*(\\d+)[^\\[\\s]*"); // This regex is a mess, it captures the coords into $1 and $2 while $0 contains all surrounding text as well. https://regex101.com is the superior regex tester
+    private static final Pattern coordPattern = Pattern.compile("(\\d+)(?:\\[[^]]*])*(?:\\s|,)+(?:\\[[^]]*])*(\\d+)"); // Same as above, but without the surrounding text and https://regexr.com
+    private static final Pattern linkPattern = Pattern.compile("(https?://)?[-a-zA-Z0-9@:%._\\\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b[-a-zA-Z0-9()@:%_\\\\+.~#?&/=]*");
 
     private long ping;
     private Interval timer = new Interval(5);
@@ -69,6 +69,8 @@ public class NetClient implements ApplicationListener{
     private DataInputStream dataStream = new DataInputStream(byteStream);
     /** Packet handlers for custom types of messages. */
     private ObjectMap<String, Seq<Cons<String>>> customPacketHandlers = new ObjectMap<>();
+    /** Foo's thing to make ServerJoinEvent work good */
+    public static boolean firstLoad = true;
 
     public NetClient(){
 
@@ -109,6 +111,21 @@ public class NetClient implements ApplicationListener{
             c.usid = getUsid(packet.addressTCP);
             c.uuid = platform.getUUID();
 
+            var address = packet.addressTCP.split("[:/]")[1]; // Remove leading slash (and domain) and trailing port
+            if (ui.join.communityHosts.contains(h -> "Korea".equals(h.group) && h.address.equals(address))) { // Korea is cursed
+                var matcher = Pattern.compile("^\\[(.*)]").matcher(player.name);
+                if (matcher.find()) {
+                    var col = matcher.toMatchResult().group(1);
+                    var get = Colors.get(col);
+                    c.name = matcher.replaceAll("");
+                    try {
+                        c.color = get != null ? get.rgba() : Color.valueOf(col).rgba();
+                    } catch (IndexOutOfBoundsException ignored) {}
+                }
+            } else if (ui.join.communityHosts.contains(h -> "Chaotic Neutral".equals(h.group) && h.address.equals(address))) {
+                if (!Structs.contains(playerColors, col -> col.rgba() == c.color)) c.color = playerColors[0].rgba();
+            }
+
             if(c.uuid == null){
                 ui.showErrorMessage("@invalidid");
                 ui.loadfrag.hide();
@@ -127,21 +144,18 @@ public class NetClient implements ApplicationListener{
             platform.updateRPC();
             player.name = Core.settings.getString("name");
             player.color.set(Core.settings.getInt("color-0"));
-            ui.join.lastHost = null;
 
             if(quiet) return;
 
             Time.runTask(3f, ui.loadfrag::hide);
 
-            if(packet.reason != null){
-                ui.showSmall(switch(packet.reason){
-                    case "closed" -> "@disconnect.closed";
-                    case "timeout" -> "@disconnect.timeout";
-                    default -> "@disconnect.error";
-                }, "@disconnect.closed");
-            }else{
-                ui.showErrorMessage("@disconnect");
-            }
+            String title = 
+                packet.reason == null ? "@disconnect" :
+                packet.reason.equals("closed") ? "@disconnect.closed" :
+                packet.reason.equals("timeout") ? "@disconnect.timeout" :
+                "@disconnect.error";
+            ui.showCustomConfirm(title, "@disconnect.closed", "@reconnect", "@ok", () -> ui.join.reconnect(), () -> {});
+            //FINISHME: duped code, ctrl+f ui.showCustomConfirm
         });
 
         net.handleClient(WorldStream.class, data -> {
@@ -174,19 +188,19 @@ public class NetClient implements ApplicationListener{
         clientPacketReliable(type, contents);
     }
 
-    @Remote(variants = Variant.both, unreliable = true)
+    @Remote(variants = Variant.both, unreliable = true, called = Loc.server)
     public static void sound(Sound sound, float volume, float pitch, float pan){
-        if(sound == null) return;
+        if(sound == null || headless) return;
 
-        sound.play(Mathf.clamp(volume, 0, 4f) * Core.settings.getInt("sfxvol") / 100f, pitch, pan);
+        sound.play(Mathf.clamp(volume, 0, 8f) * Core.settings.getInt("sfxvol") / 100f, Mathf.clamp(pitch, 0f, 20f), pan, false, false);
     }
 
-    @Remote(variants = Variant.both, unreliable = true)
+    @Remote(variants = Variant.both, unreliable = true, called = Loc.server)
     public static void soundAt(Sound sound, float x, float y, float volume, float pitch){
-        if(sound == null) return;
-        if(sound == Sounds.corexplode && ClientUtilsKt.io()) return;
+        if(sound == null || headless) return;
+        if(sound == Sounds.corexplode && Server.io.b()) return;
 
-        sound.at(x, y, pitch, Mathf.clamp(volume, 0, 4f));
+        sound.at(x, y, Mathf.clamp(pitch, 0f, 20f), Mathf.clamp(volume, 0, 4f));
     }
 
     @Remote(variants = Variant.both, unreliable = true)
@@ -210,66 +224,151 @@ public class NetClient implements ApplicationListener{
 
     @Remote(targets = Loc.server, variants = Variant.both)
     public static void sendMessage(String message, @Nullable String unformatted, @Nullable Player playersender){
+        // message is the full formatted message from the server, including the sender
+        // unformatted is the message content itself, i.e. "gg", null for server messages
+        // playersender is exactly what you think it is, null for server messages
+        if(Server.current.handleMessage(message, unformatted, playersender)) return;
+
+        Events.fire(new PlayerChatEvent(playersender, unformatted != null ? unformatted : message != null ? message : "")); // Foo addition, why is this not a vanilla thing?
+
         Color background = null;
-        var original = unformatted; // Cursed and horrible
         if(Vars.ui != null){
             var prefix = "";
 
-            if (playersender != null && playersender.fooUser && playersender != player) { // Add wrench to client user messages, highlight if enabled
+            // Add wrench to client user messages, highlight if enabled
+            if (playersender != null && playersender.fooUser && playersender != player) {
                 prefix = Iconc.wrench + " ";
                 if (Core.settings.getBool("highlightclientmsg")) background = ClientVars.user;
             }
 
-            unformatted = processCoords(unformatted, true);
-            message = processCoords(message, unformatted != null);
-            if (playersender != null) {
-                if (message.startsWith("[#" + playersender.team().color.toString() + "]<T>")) {
-                    prefix += "[#" + playersender.team().color.toString() + "]<T> ";
-                }
-                if (message.startsWith("[#" + Pal.adminChat.toString() + "]<A>")) {
-                    prefix += "[#" + Pal.adminChat.toString() + "]<A> ";
-                }
-                var sender = playersender.coloredName();
-                var unformatted2 = unformatted == null ? StringsKt.removePrefix(message, "[" + playersender.coloredName() + "]: ") : unformatted;
-                ui.chatfrag.addMessage(message, sender, background, prefix, unformatted2);
-            } else {
-                Vars.ui.chatfrag.addMessage(message, null, unformatted == null ? "" : unformatted);
-            }
             if (Core.settings.getBool("logmsgstoconsole") && net.client()) // Make sure we are a client, if we are the server it does this already
                 Log.log(Log.LogLevel.info, "[Chat] &fi@: @",
                     "&lc" + (playersender == null ? "Server" : Strings.stripColors(playersender.name)),
                     "&lw" + Strings.stripColors(InvisibleCharCoder.INSTANCE.strip(unformatted != null ? unformatted : message))
                 );
+            
+            // highlight coords and set as the last position
+            unformatted = processCoords(unformatted, true);
+            message = processCoords(message, unformatted != null);
+
+            ChatFragment.ChatMessage output;
+
+            if (playersender != null) {
+                if (ClientVars.mutedPlayers.contains( p -> p.getSecond() == playersender.id || (p.getFirst() != null && playersender.name.equals(p.getFirst().name)))) {
+                    return; // Just ignore them
+                }
+                // from a player
+                if (message != null) { // The Korea server breaks the rules of this method and has a null message
+                    // if it's an admin or team message, incorporate that into the prefix because the original formatting will be discarded
+                    if (message.startsWith("[#" + playersender.team().color.toString() + "]<T>")) {
+                        prefix += "[#" + playersender.team().color.toString() + "]<T> ";
+                    } else if (message.startsWith("[#" + Pal.adminChat.toString() + "]<A>")) {
+                        prefix += "[#" + Pal.adminChat.toString() + "]<A> ";
+                    }
+                }
+
+                // I don't think this even works
+//                var unformatted2 = unformatted == null ? StringsKt.removePrefix(message, "[" + playersender.coloredName() + "]: ") : unformatted;
+                output = ui.chatfrag.addMessage(message, playersender.coloredName(), background, prefix, unformatted);
+                output.addButton(output.formattedMessage.indexOf(playersender.coloredName()), playersender.coloredName().length() + 16 + output.prefix.length(), () -> Spectate.INSTANCE.spectate(playersender));
+            } else {
+                // server message, unformatted is ignored
+                output = ui.chatfrag.addMessage(message, null, null, "", "");
+            }
+
+            findCoords(output);
+            findLinks(output, playersender == null ? 0 : playersender.coloredName().length() + 16 + output.prefix.length());
+
+            Sounds.chatMessage.play();
         }
 
-        //display raw unformatted text above player head
         if(playersender != null && unformatted != null){
+            //display raw unformatted text above player head
             playersender.lastText(unformatted);
             playersender.textFadeTime(1f);
         }
 
-        Events.fire(new PlayerChatEventClient(playersender, original));
+        Events.fire(new PlayerChatEventClient());
     }
 
     //equivalent to above method but there's no sender and no console log
     @Remote(called = Loc.server, targets = Loc.server)
     public static void sendMessage(String message){
-        if(Vars.ui != null){
-            if (Core.settings.getBool("logmsgstoconsole") && net.client()) Log.infoTag("Chat", Strings.stripColors(InvisibleCharCoder.INSTANCE.strip(message)));
-            if (!message.contains("has connected") && !message.contains("has disconnected")) Log.debug("Tell the owner of this server to send messages properly");
-            message = processCoords(message, true);
-            Vars.ui.chatfrag.addMessage(message);
+        if(Server.current.handleMessage(message, message, null)) return;
+        if(Vars.ui == null) return;
+
+        if (Core.settings.getBool("logmsgstoconsole") && net.client()) Log.infoTag("Chat", Strings.stripColors(InvisibleCharCoder.INSTANCE.strip(message)));
+        if (!message.contains("has connected") && !message.contains("has disconnected")) Log.debug("Tell the owner of this server to send messages properly");
+        message = processCoords(message, true);
+        var output = Vars.ui.chatfrag.addMessage(message, null, null, "", message);
+
+        findCoords(output);
+        findLinks(output, 0);
+
+        if (Server.current.isVotekick(message)) { // Vote kick clickable buttons
+            String yes = Core.bundle.get("client.voteyes"), no = Core.bundle.get("client.voteno");
+            output.message = output.message + '\n' + yes + "  " + no;
+            output.format();
+            output.addButton(yes, () -> Call.sendChatMessage("/vote y"));
+            output.addButton(no, () -> Call.sendChatMessage("/vote n"));
         }
+
+        Server.current.handleVoteButtons(output);
+
+        Sounds.chatMessage.play();
     }
 
-    private static String processCoords(String message, boolean setLastPos){
-        if (message == null) return null;
+    public static class FoundCoords {
+        public Vec2 pos;
+        public int start, end;
+    }
+
+    public static Seq<FoundCoords> findCoords(String message) {
+        if (message == null) return new Seq<>();
         Matcher matcher = coordPattern.matcher(message);
+        Seq<FoundCoords> out = new Seq<>();
+        while (matcher.find()) {
+            var result = matcher.toMatchResult();
+            try {
+                var pos = new Vec2(Float.parseFloat(result.group(1)) * tilesize, Float.parseFloat(result.group(2)) * tilesize);
+                var coord = new FoundCoords();
+                coord.pos = pos;
+                coord.start = result.start();
+                coord.end = result.end();
+                out.add(coord);
+            } catch (NumberFormatException ignored) {}
+        }
+        return out;
+    }
+
+    /** Finds coordinates in a message and makes them clickable */
+    public static ChatFragment.ChatMessage findCoords(ChatFragment.ChatMessage msg) {
+        findCoords(InvisibleCharCoder.INSTANCE.strip(msg.formattedMessage))
+            .each(c -> msg.addButton(c.start, c.end, () -> Spectate.INSTANCE.spectate(c.pos)));
+        return msg;
+    }
+
+    /** Finds links in a message and makes them clickable */
+    public static ChatFragment.ChatMessage findLinks(ChatFragment.ChatMessage msg, int start) {
+        Matcher matcher = linkPattern.matcher(InvisibleCharCoder.INSTANCE.strip(msg.formattedMessage));
+        while (matcher.find()) {
+            var res = matcher.toMatchResult();
+            if(res.start() < start) continue; // .find(start) is cursed
+            var url = res.group(1) == null ? "https://" + res.group() : res.group(); // Add https:// if missing protocol
+            msg.addButton(res.start(), res.end(), () -> Menus.openURI(url));
+        }
+        return msg;
+    }
+
+    public static String processCoords(String message, boolean setLastPos){
+        // FINISHME: use findCoords()
+        if (message == null) return null;
+        Matcher matcher = wholeCoordPattern.matcher(message);
         if (!matcher.find()) return message;
         if (setLastPos) try {
             ClientVars.lastSentPos.set(Float.parseFloat(matcher.group(1)), Float.parseFloat(matcher.group(2)));
         } catch (NumberFormatException ignored) {}
-        return matcher.replaceFirst(Matcher.quoteReplacement("[scarlet]" + Strings.stripColors(matcher.group()) + "[]")); // replaceFirst [scarlet]$0[] fails if $0 begins with a color, stripColors($0) isn't something that works.
+        return matcher.replaceFirst(Matcher.quoteReplacement("[scarlet]" + Strings.stripColors(matcher.group()) + "[]"));
     }
 
     //called when a server receives a chat message from a player
@@ -277,6 +376,15 @@ public class NetClient implements ApplicationListener{
     public static void sendChatMessage(Player player, String message){
         //do not receive chat messages from clients that are too young or not registered
         if(net.server() && player != null && player.con != null && (Time.timeSinceMillis(player.con.connectTime) < 500 || !player.con.hasConnected || !player.isAdded())) return;
+
+        //detect and kick for foul play
+        if(player != null && player.con != null && !player.con.chatRate.allow(2000, Config.chatSpamLimit.num())){
+            player.con.kick(KickReason.kick);
+            netServer.admins.blacklistDos(player.con.address);
+            return;
+        }
+
+        if(message == null) return;
 
         if(message.length() > maxTextLength){
             throw new ValidateException(player, "Player has sent a message above the text limit.");
@@ -289,7 +397,7 @@ public class NetClient implements ApplicationListener{
         //log commands before they are handled
         if(message.startsWith(netServer.clientCommands.getPrefix())){
             //log with brackets
-            Log.info("<&fi@: @&fr>", "&lk" + player.name, "&lw" + message);
+            Log.info("<&fi@: @&fr>", "&lk" + player.plainName(), "&lw" + message);
         }
 
         //check if it's a command
@@ -307,7 +415,7 @@ public class NetClient implements ApplicationListener{
             }
 
             //server console logging
-            Log.info("&fi@: @", "&lc" + player.name, "&lw" + message);
+            Log.info("&fi@: @", "&lc" + player.plainName(), "&lw" + InvisibleCharCoder.INSTANCE.strip(message));
 
             //invoke event for all clients but also locally
             //this is required so other clients get the correct name even if they don't know who's sending it yet
@@ -327,12 +435,11 @@ public class NetClient implements ApplicationListener{
     @Remote(called = Loc.client, variants = Variant.one)
     public static void connect(String ip, int port){
         if(!steam && ip.startsWith("steam:")) return;
+        Log.info("Server sending us to @:@", ip, port);
         netClient.disconnectQuietly();
         logic.reset();
 
-        Core.settings.put("currentserverip", ip);
-        Core.settings.put("currentserverport", port);
-
+        Server.destinationServer = ip + ":" + port;
         ui.join.connect(ip, port);
     }
 
@@ -349,10 +456,11 @@ public class NetClient implements ApplicationListener{
     @Remote(variants = Variant.one)
     public static void traceInfo(Player player, TraceInfo info){
         if(player != null){
-            if (ClientVars.silentTrace-- <= 0) {
-                ui.traces.show(player, info);
-                ClientVars.silentTrace++; // FINISHME: This is stupid
-            } else if (Core.settings.getBool("modenabled")) Client.INSTANCE.getLeaves().addInfo(player, info);
+            if (ClientVars.silentTrace == 0) ui.traces.show(player, info);
+            else {
+                if (Core.settings.getBool("modenabled")) Client.INSTANCE.getLeaves().addInfo(player, info);
+                ClientVars.silentTrace--;
+            }
         }
     }
 
@@ -367,10 +475,13 @@ public class NetClient implements ApplicationListener{
         }
 
         if(!reason.quiet){
-            if(reason.extraText() != null){
-                ui.showText(reason.toString(), reason.extraText());
+            String title = reason.extraText() == null ? "@disconnect" : reason.toString();
+            String text = reason.extraText() == null ? reason.toString() : reason.extraText();
+
+            if(reason.rejoinable){
+                ui.showCustomConfirm(title, text, "@reconnect", "@ok", () -> ui.join.reconnect(), () -> {});
             }else{
-                ui.showText("@disconnect", reason.toString());
+                ui.showText(reason.toString(), reason.extraText());
             }
         }
         ui.loadfrag.hide();
@@ -378,9 +489,10 @@ public class NetClient implements ApplicationListener{
 
     @Remote(variants = Variant.one, priority = PacketPriority.high)
     public static void kick(String reason){
+        ServerUtils.handleKick(reason);
         netClient.disconnectQuietly();
         logic.reset();
-        ui.showText("@disconnect", reason, Align.left);
+        ui.showCustomConfirm("@disconnect", reason, "@reconnect", "@ok", () -> ui.join.reconnect(), () -> {});
         ui.loadfrag.hide();
     }
 
@@ -390,8 +502,28 @@ public class NetClient implements ApplicationListener{
     }
 
     @Remote(variants = Variant.both)
+    public static void setObjectives(MapObjectives executor){
+        //clear old markers
+        for(var objective : state.rules.objectives){
+            for(var marker : objective.markers){
+                if(marker.wasAdded){
+                    marker.removed();
+                    marker.wasAdded = false;
+                }
+            }
+        }
+
+        state.rules.objectives = executor;
+    }
+
+    @Remote(called = Loc.server)
+    public static void objectiveCompleted(String[] flagsRemoved, String[] flagsAdded){
+        state.rules.objectiveFlags.removeAll(flagsRemoved);
+        state.rules.objectiveFlags.addAll(flagsAdded);
+    }
+
+    @Remote(variants = Variant.both)
     public static void worldDataBegin(){
-        if (ClientVars.syncing && Groups.unit.contains(u -> u.controller() instanceof FormationAI ai && ai.leader == player.unit())) Call.unitCommand(player);
         Groups.clear();
         netClient.removed.clear();
         logic.reset();
@@ -414,6 +546,13 @@ public class NetClient implements ApplicationListener{
         player.set(x, y);
     }
 
+    @Remote(variants = Variant.both, unreliable = true)
+    public static void setCameraPosition(float x, float y){ // FINISHME: Add some sort of toggle
+        if(Core.camera != null){
+            Core.camera.position.set(x, y);
+        }
+    }
+
     @Remote
     public static void playerDisconnect(int playerid){
         Events.fire(new PlayerLeave(Groups.player.getByID(playerid)));
@@ -423,6 +562,43 @@ public class NetClient implements ApplicationListener{
         Groups.player.removeByID(playerid);
     }
 
+    public static void readSyncEntity(DataInputStream input, Reads read) throws IOException{
+        int id = input.readInt();
+        byte typeID = input.readByte();
+
+        Syncc entity = Groups.sync.getByID(id);
+        boolean add = false, created = false;
+
+        if(entity == null && id == player.id()){
+            entity = player;
+            add = true;
+        }
+
+        //entity must not be added yet, so create it
+        if(entity == null){
+            entity = (Syncc)EntityMapping.map(typeID & 0xFF).get();
+            entity.id(id);
+            if(!netClient.isEntityUsed(entity.id())){
+                add = true;
+            }
+            created = true;
+        }
+
+        //read the entity
+        entity.readSync(read);
+
+        if(created){
+            //snap initial starting position
+            entity.snapSync();
+        }
+
+        if(add){
+            entity.add();
+            netClient.addRemovedEntity(entity.id());
+            if (entity instanceof Player p && !ClientVars.syncing) Events.fire(new PlayerJoin(p));
+        }
+    }
+
     @Remote(variants = Variant.one, priority = PacketPriority.low, unreliable = true)
     public static void entitySnapshot(short amount, byte[] data){
         try{
@@ -430,43 +606,22 @@ public class NetClient implements ApplicationListener{
             DataInputStream input = netClient.dataStream;
 
             for(int j = 0; j < amount; j++){
-                int id = input.readInt();
-                byte typeID = input.readByte();
-
-                Syncc entity = Groups.sync.getByID(id);
-                boolean add = false, created = false;
-
-                if(entity == null && id == player.id()){
-                    entity = player;
-                    add = true;
-                }
-
-                //entity must not be added yet, so create it
-                if(entity == null){
-                    entity = (Syncc)EntityMapping.map(typeID).get();
-                    entity.id(id);
-                    if(!netClient.isEntityUsed(entity.id())){
-                        add = true;
-                    }
-                    created = true;
-                }
-
-                //read the entity
-                entity.readSync(Reads.get(input));
-
-                if(created){
-                    //snap initial starting position
-                    entity.snapSync();
-                }
-
-                if(add){
-                    entity.add();
-                    netClient.addRemovedEntity(entity.id());
-                    if (entity instanceof Player p) Events.fire(new PlayerJoin(p));
-                }
+                readSyncEntity(input, Reads.get(input));
             }
-        }catch(IOException e){
-            throw new RuntimeException(e);
+        }catch(Exception e){
+            //don't disconnect, just log it
+            Log.err("Error reading entity snapshot", e);
+        }
+    }
+
+    @Remote(variants = Variant.one, priority = PacketPriority.low, unreliable = true)
+    public static void hiddenSnapshot(IntSeq ids){
+        for(int i = 0; i < ids.size; i++){
+            int id = ids.items[i];
+            var entity = Groups.sync.getByID(id);
+            if(entity != null){
+                entity.handleSyncHidden();
+            }
         }
     }
 
@@ -507,13 +662,15 @@ public class NetClient implements ApplicationListener{
             state.wavetime = waveTime;
             state.wave = wave;
             state.enemies = enemies;
-            state.serverPaused = paused;
+            if(!state.isMenu()){
+                state.set(paused ? State.paused : State.playing);
+            }
             state.serverTps = tps & 0xff;
 
             //note that this is far from a guarantee that random state is synced - tiny changes in delta and ping can throw everything off again.
             //syncing will only make much of a difference when rand() is called infrequently
-            GlobalConstants.rand.seed0 = rand0;
-            GlobalConstants.rand.seed1 = rand1;
+            GlobalVars.rand.seed0 = rand0;
+            GlobalVars.rand.seed1 = rand1;
 
             universe.updateNetSeconds(timeData);
 
@@ -576,23 +733,17 @@ public class NetClient implements ApplicationListener{
         connecting = false;
         ui.join.hide();
         net.setClientLoaded(true);
-        Core.app.post(Call::connectConfirm);
+        Call.connectConfirm();
         Time.runTask(40f, platform::updateRPC);
         Core.app.post(ui.loadfrag::hide);
-        Core.app.post(() -> Events.fire(new EventType.ServerJoinEvent()));
-        Core.app.post(() -> { // We already command on sync, the player's formation var isn't set correctly, so we have to set it here as well.
-            var units = Groups.unit.array.select(it -> it.controller().isBeingControlled(Vars.player.unit()));
-            if (units.any()) {
-                var formation = new Formation(new Vec3(Vars.player.x, Vars.player.y, Vars.player.unit().rotation), new CircleFormation());
-                formation.addMembers(units.map(u -> (FormationAI)u.controller()));
-                player.unit().formation = formation;
-                player.unit().minFormationSpeed = Math.min(player.unit().type.speed, units.min(u -> u.type.speed).type.speed);
-                formation.pattern.spacing = Math.max(player.unit().hitSize * .9f, units.max(u -> u.hitSize).hitSize * 1.3f);
-            }
-        });
+        if (NetClient.firstLoad) {
+            Events.fire(new ServerJoinEvent());
+            NetClient.firstLoad = false;
+        }
     }
 
     private void reset(){
+        firstLoad = true;
         net.setClientLoaded(false);
         removed.clear();
         timeoutTime = 0f;
@@ -639,35 +790,13 @@ public class NetClient implements ApplicationListener{
         return removed.contains(id);
     }
 
-    private final ReusableByteOutStream counter = new ReusableByteOutStream();
-    private final Writes write = new Writes(new DataOutputStream(counter));
     void sync(){
         if(timer.get(0, playerSyncTime)){
-            BuildPlan[] requests = null;
-            if(player.isBuilder() || player.unit().isBuilding()){
-                int usedRequests = player.unit().plans().size;
-
-                for(int i = 0; i < usedRequests; i++){
-                    BuildPlan plan = player.unit().plans().get(i);
-                    TypeIO.writeRequest(write, plan); // Write plan so we can get the byte length
-
-                    if(counter.size() > 500){ // prevent buffer overflows (large configs / many plans)
-                        usedRequests = i + 1;
-                        break;
-                    }
-                }
-                counter.reset();
-
-                requests = new BuildPlan[usedRequests];
-                for(int i = 0; i < usedRequests; i++){
-                    requests[i] = player.unit().plans().get(i);
-                }
-            }
-
             Unit unit = player.dead() ? Nulls.unit : player.unit();
             int uid = player.dead() ? -1 : unit.id;
             Vec2 aimPos = Main.INSTANCE.floatEmbed();
 
+            TypeIO.useConfigLocal = true; // Awful.
             Call.clientSnapshot(
             lastSent++,
             uid,
@@ -679,11 +808,12 @@ public class NetClient implements ApplicationListener{
             unit instanceof Mechc m ? m.baseRotation() : 0,
             unit.vel.x, unit.vel.y,
             player.unit().mineTile,
-            player.boosting, player.shooting, ui.chatfrag.shown(), control.input.isBuilding,
-            requests,
+            player.boosting, player.shooting, player.typing, control.input.isBuilding,
+            player.isBuilder() ? player.unit().plans : null,
             Core.camera.position.x, Core.camera.position.y,
             Core.camera.width, Core.camera.height
             );
+            TypeIO.useConfigLocal = false;
         }
 
         if(timer.get(1, 60)){

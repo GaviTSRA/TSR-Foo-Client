@@ -7,6 +7,7 @@ import arc.struct.*;
 import arc.util.*;
 import mindustry.ai.types.*;
 import mindustry.client.*;
+import mindustry.client.navigation.*;
 import mindustry.client.utils.*;
 import mindustry.content.*;
 import mindustry.entities.*;
@@ -43,7 +44,7 @@ public class UnitPicker extends BaseDialog {
             labels.add(new Label(""));
         }
         TextField searchField = cont.field("", string -> {
-            sorted = sorted.sort((b) -> BiasedLevenshtein.biasedLevenshteinInsensitive(string, b.localizedName));
+            sorted = sorted.sort((b) -> ClientUtils.biasedLevenshtein(string, b.localizedName));
             for (int i = 0; i < imgs.size; i++) {
                 Image region = new Image(sorted.get(i).uiIcon);
                 imgs.get(i).setDrawable(region.getDrawable());
@@ -58,14 +59,41 @@ public class UnitPicker extends BaseDialog {
         Core.app.post(searchField::requestKeyboard);
     }
 
-    public boolean pickUnit(UnitType type) {
+    /** Called whenever a new unit is added. */
+    public void handle(Unit unit){
+        if (type != unit.type || unit.team != player.team() || !state.rules.possessionAllowed || Navigation.currentlyFollowing instanceof MinePath mp && mp.getNewGame()) return;
+
+        Call.unitControl(player, unit); // FINISHME: Handle as config due to ratelimit
+        type = null;
+
+        Timer.schedule(() -> Core.app.post(() -> {
+            if (unit.isPlayer()) {
+                Toast t = new Toast(3);
+                if (unit.isLocal()) {
+                    t.add("@client.unitpicker.success");
+                } else if (unit.getPlayer() != null && !unit.isLocal()) {
+                    type = unit.type;
+                    t.add(Core.bundle.format("client.unitpicker.alreadyinuse", unit.type, unit.getPlayer().name));
+                }
+            } else { // This happens sometimes, idk man FINISHME: Cleanup
+                Log.err("???");
+                type = unit.type;
+            }
+        }), net.client() ? netClient.getPing() / 1000f + .3f : 0);
+
+    }
+
+    public boolean pickUnit(UnitType type){
+        return pickUnit(type, player.x, player.y, false);
+    }
+    public boolean pickUnit(UnitType type, float x, float y, boolean fast) {
         hide();
-        if (type == null) return false;
-        var found = findUnit(type);
+        if (type == null || !state.rules.possessionAllowed) return false; // FINISHME: Message when possession not allowed
+        var found = findUnit(type, x, y, fast);
 
         Toast t = new Toast(3);
         if (found != null) {
-            Call.unitControl(player, found); // Switch to unit
+            Call.unitControl(player, found); // Switch to unit FINISHME: Handle as config due to ratelimit
             t.add("@client.unitpicker.success");
             this.type = null;
         } else {
@@ -76,19 +104,25 @@ public class UnitPicker extends BaseDialog {
     }
 
     public Unit findUnit(UnitType type) {
-        Unit found = Units.closest(player.team(), player.x, player.y, u -> !u.isPlayer() && u.type == type && !u.dead && !(u.controller() instanceof FormationAI || u.controller() instanceof LogicAI));
-        if (found == null) found = Units.closest(player.team(), player.x, player.y, u -> !u.isPlayer() && u.type == type && !u.dead && !(u.controller() instanceof FormationAI)); // Include logic units
-        if (found == null) found = Units.closest(player.team(), player.x, player.y, u -> !u.isPlayer() && u.type == type && !u.dead); // Include formation units
+        return findUnit(type, player.x, player.y);
+    }
+    public Unit findUnit(UnitType type, float x, float y) { // FINISHME: These functions are a mess, the params aren't even used half o the time, fix this
+        Unit found = Units.closest(player.team(), player.x, player.y, u -> !u.isPlayer() && u.type == type && !u.dead && !(u.controller() instanceof LogicAI)); // Non logic units
+        if (found == null) found = Units.closest(player.team(), player.x, player.y, u -> !u.isPlayer() && u.type == type && !u.dead); // All units
 
         return found;
+    }
+    public Unit findUnit(UnitType type, float x, float y, boolean fast) {
+        if(!fast) return findUnit(type, x, y);
+        return Units.closest(player.team(), x, y, u -> !u.isPlayer() && u.type == type && !u.dead);
     }
 
     private void setup(){
         Events.on(EventType.UnitChangeEventClient.class, event -> {
-            if (type == null || event.oldUnit.dead || event.oldUnit.type != type || event.oldUnit.team != player.team() || event.player.isLocal()) return;
+            if (type == null || event.oldUnit.dead || event.oldUnit.type != type || event.oldUnit.team != player.team() || event.player.isLocal() || !state.rules.possessionAllowed || Navigation.currentlyFollowing instanceof MinePath mp && mp.getNewGame()) return;
             type = null;
             Timer.schedule(() -> Core.app.post(() -> {
-                Call.unitControl(player, event.oldUnit);
+                Call.unitControl(player, event.oldUnit); // FINISHME: Handle as config due to ratelimit
                 Timer.schedule(() -> Core.app.post(() -> { // Delay by a frame + ping so the unit is actually unloaded in time.
                     if (event.oldUnit.isPlayer()) {
                         Toast t = new Toast(3);
@@ -104,30 +138,30 @@ public class UnitPicker extends BaseDialog {
             }), net.client() ? netClient.getPing()/1000f + .3f: 0);
         });
 
-        Events.on(EventType.UnitUnloadEvent.class, event -> {
-            if (type == null || event.unit.type != type || event.unit.team != player.team()) return;
-            var temp = type;
-            type = null;
-            Timer.schedule(() -> Core.app.post(() -> { // Delay by a frame + ping so the unit is actually unloaded in time.
-                var found = findUnit(temp);
-                if (found == null) return;
-                type = null;
-                Call.unitControl(player, found);
-                Timer.schedule(() -> Core.app.post(() -> {
-                    if (found.isPlayer()) {
-                        Toast t = new Toast(3);
-                        if (found.isLocal()) {
-                            t.add("@client.unitpicker.success");
-                        } else if (found.getPlayer() != null && !found.isLocal()) {
-                            type = found.type;
-                            t.add(Core.bundle.format("client.unitpicker.alreadyinuse", found.type, found.getPlayer().name));
-                        }
-                    } else { // This happens sometimes, idk man FINISHME: Cleanup
-                        type = event.unit.type;
-                    }
-                }), net.client() ? netClient.getPing() / 1000f + .3f : 0);
-            }), net.client() ? netClient.getPing()/1000f + .3f: 0);
-        });
+//        Events.on(EventType.UnitUnloadEvent.class, event -> {
+//            if (type == null || event.unit.type != type || event.unit.team != player.team()) return;
+//            var temp = type;
+//            type = null;
+//            Timer.schedule(() -> Core.app.post(() -> { // Delay by a frame + ping so the unit is actually unloaded in time.
+//                var found = findUnit(temp);
+//                if (found == null) return;
+//                type = null;
+//                Call.unitControl(player, found);
+//                Timer.schedule(() -> Core.app.post(() -> {
+//                    if (found.isPlayer()) {
+//                        Toast t = new Toast(3);
+//                        if (found.isLocal()) {
+//                            t.add("@client.unitpicker.success");
+//                        } else if (found.getPlayer() != null && !found.isLocal()) {
+//                            type = found.type;
+//                            t.add(Core.bundle.format("client.unitpicker.alreadyinuse", found.type, found.getPlayer().name));
+//                        }
+//                    } else { // This happens sometimes, idk man FINISHME: Cleanup
+//                        type = event.unit.type;
+//                    }
+//                }), net.client() ? netClient.getPing() / 1000f + .3f : 0);
+//            }), net.client() ? netClient.getPing()/1000f + .3f: 0);
+//        });
 
         Events.on(EventType.WorldLoadEvent.class, event -> {
             if (!ClientVars.syncing) {

@@ -12,9 +12,12 @@ import arc.scene.ui.*;
 import arc.scene.ui.ImageButton.*;
 import arc.scene.ui.TextButton.*;
 import arc.scene.ui.layout.*;
-import arc.scene.utils.*;
 import arc.struct.*;
 import arc.util.*;
+import mindustry.client.*;
+import mindustry.client.communication.*;
+import mindustry.client.navigation.*;
+import mindustry.client.ui.*;
 import mindustry.ctype.*;
 import mindustry.game.*;
 import mindustry.gen.*;
@@ -29,10 +32,12 @@ import static mindustry.Vars.*;
 
 public class SchematicsDialog extends BaseDialog{
     private static final float tagh = 42f;
-    private SchematicInfoDialog info = new SchematicInfoDialog();
+    public SchematicInfoDialog info = new SchematicInfoDialog();
     private Schematic firstSchematic;
     private String search = "";
     private TextField searchField;
+    private String descSearch = "";
+    private TextField descSearchField;
     private Runnable rebuildPane = () -> {}, rebuildTags = () -> {};
     private Pattern ignoreSymbols = Pattern.compile("[`~!@#$%^&*()\\-_=+{}|;:'\",<.>/?]");
     private Seq<String> tags, selectedTags = new Seq<>();
@@ -46,7 +51,9 @@ public class SchematicsDialog extends BaseDialog{
 
         shouldPause = true;
         addCloseButton();
+        buttons.button("@client.schematic.browser", Icon.host, SchematicBrowserDialog::showBrowser);
         buttons.button("@schematic.import", Icon.download, this::showImport);
+        makeButtonOverlay();
         shown(this::setup);
         onResize(this::setup);
     }
@@ -62,15 +69,29 @@ public class SchematicsDialog extends BaseDialog{
         cont.top();
         cont.clear();
 
-        cont.table(s -> {
-            s.left();
-            s.image(Icon.zoom);
-            searchField = s.field(search, res -> {
-                search = res;
-                rebuildPane.run();
-            }).growX().get();
-        }).fillX().padBottom(4);
 
+        cont.table(t -> {
+            t.table(s -> {
+                s.setWidth(t.getWidth() / 2);
+                s.left();
+                s.image(Icon.zoom);
+                searchField = s.field(search, res -> {
+                    search = res;
+                    rebuildPane.run();
+                }).growX().get();
+                searchField.setMessageText("@schematic.search");
+            }).growX();
+            t.table(s -> {
+                s.setWidth(t.getWidth() / 2);
+                s.left();
+                s.image(Icon.edit);
+                descSearchField = s.field(descSearch, res -> {
+                    descSearch = res;
+                    rebuildPane.run();
+                }).growX().get();
+                descSearchField.setMessageText("@schematic.searchdescription");
+            }).growX().padLeft(4);
+        }).fillX().padBottom(4);
         cont.row();
 
         cont.table(in -> {
@@ -78,7 +99,7 @@ public class SchematicsDialog extends BaseDialog{
             in.add("@schematic.tags").padRight(4);
 
             //tags (no scroll pane visible)
-            in.pane(Styles.nonePane, t -> {
+            in.pane(Styles.noBarPane, t -> {
                 rebuildTags = () -> {
                     t.clearChildren();
                     t.left();
@@ -98,9 +119,7 @@ public class SchematicsDialog extends BaseDialog{
                 rebuildTags.run();
             }).fillX().height(tagh).scrollY(false);
 
-            in.button(Icon.pencilSmall, () -> {
-                showAllTags();
-            }).size(tagh).pad(2).tooltip("@schematic.edittags");
+            in.button(Icon.pencilSmall, this::showAllTags).size(tagh).pad(2).tooltip("@schematic.edittags");
         }).height(tagh).fillX();
 
         cont.row();
@@ -110,6 +129,12 @@ public class SchematicsDialog extends BaseDialog{
 
             t.update(() -> {
                 if(Core.input.keyTap(Binding.chat) && Core.scene.getKeyboardFocus() == searchField && firstSchematic != null){
+                    if(!(state.rules.schematicsAllowed || Core.settings.getBool("forceallowschematics"))){
+                        ui.showInfo("@schematic.disabled");
+                    }else{
+                        control.input.useSchematic(firstSchematic);
+                        hide();
+                    }
                     control.input.useSchematic(firstSchematic);
                     hide();
                 }
@@ -121,6 +146,7 @@ public class SchematicsDialog extends BaseDialog{
                 t.clear();
                 int i = 0;
                 String searchString = ignoreSymbols.matcher(search.toLowerCase()).replaceAll("");
+                String descSearchString = ignoreSymbols.matcher(descSearch.toLowerCase()).replaceAll("");
 
                 firstSchematic = null;
 
@@ -128,7 +154,12 @@ public class SchematicsDialog extends BaseDialog{
                     //make sure *tags* fit
                     if(selectedTags.any() && !s.labels.containsAll(selectedTags)) continue;
                     //make sure search fits
-                    if(!search.isEmpty() && !ignoreSymbols.matcher(s.name().toLowerCase()).replaceAll("").contains(searchString)) continue;
+                    // !(A && B)
+                    // else !(C || D)
+                    if((!search.isEmpty() || !descSearch.isEmpty()) &&
+                            (search.isEmpty() || !ignoreSymbols.matcher(s.name().toLowerCase()).replaceAll("").contains(searchString)) &&
+                            (descSearch.isEmpty() || !ignoreSymbols.matcher(s.description().toLowerCase()).replaceAll("").contains(descSearchString))
+                    ) continue;
                     if(firstSchematic == null) firstSchematic = s;
 
                     Button[] sel = {null};
@@ -139,78 +170,33 @@ public class SchematicsDialog extends BaseDialog{
                             buttons.left();
                             buttons.defaults().size(50f);
 
-                            ImageButtonStyle style = Styles.clearPartiali;
+                            ImageButtonStyle style = Styles.emptyi;
 
-                            buttons.button(Icon.info, style, () -> {
-                                showInfo(s);
-                            });
-
-                            buttons.button(Icon.upload, style, () -> {
-                                showExport(s);
-                            });
-
-                            buttons.button(Icon.pencil, style, () -> {
-                                new BaseDialog("@schematic.rename"){{
-                                    setFillParent(true);
-
-                                    cont.margin(30);
-
-                                    cont.add("@schematic.tags").padRight(6f);
-                                    cont.table(tags -> buildTags(s, tags, false)).maxWidth(400f).fillX().left().row();
-
-                                    cont.margin(30).add("@name").padRight(6f);
-                                    TextField nameField = cont.field(s.name(), null).size(400f, 55f).left().get();
-
-                                    cont.row();
-
-                                    cont.margin(30).add("@editor.description").padRight(6f);
-                                    TextField descField = cont.area(s.description(), Styles.areaField, t -> {}).size(400f, 140f).left().get();
-
-                                    Runnable accept = () -> {
-                                        s.tags.put("name", nameField.getText());
-                                        s.tags.put("description", descField.getText());
-                                        s.save();
-                                        hide();
-                                        rebuildPane.run();
-                                    };
-
-                                    buttons.defaults().size(120, 54).pad(4);
-                                    buttons.button("@ok", accept).disabled(b -> nameField.getText().isEmpty());
-                                    buttons.button("@cancel", this::hide);
-
-                                    keyDown(KeyCode.enter, () -> {
-                                        if(!nameField.getText().isEmpty() && Core.scene.getKeyboardFocus() != descField){
-                                            accept.run();
-                                        }
-                                    });
-                                    keyDown(KeyCode.escape, this::hide);
-                                    keyDown(KeyCode.back, this::hide);
-                                    show();
-                                }};
-                            });
+                            buttons.button(Icon.info, style, () -> showInfo(s)).tooltip("@info.title");
+                            buttons.button(Icon.upload, style, () -> showExport(s)).tooltip("@editor.export");
+                            buttons.button(Icon.pencil, style, () -> showEdit(s)).tooltip("@schematic.edit");
 
                             if(s.hasSteamID()){
-                                buttons.button(Icon.link, style, () -> platform.viewListing(s));
+                                buttons.button(Icon.link, style, () -> platform.viewListing(s)).tooltip("@view.workshop");
                             }else{
                                 buttons.button(Icon.trash, style, () -> {
                                     if(s.mod != null){
-                                        ui.showInfo(Core.bundle.format("mod.item.remove", s.mod.meta.displayName()));
+                                        ui.showInfo(Core.bundle.format("mod.item.remove", s.mod.meta.displayName));
                                     }else{
                                         ui.showConfirm("@confirm", "@schematic.delete.confirm", () -> {
                                             schematics.remove(s);
                                             rebuildPane.run();
                                         });
                                     }
-                                });
+                                }).tooltip("@save.delete");
                             }
-
                         }).growX().height(50f);
                         b.row();
                         b.stack(new SchematicImage(s).setScaling(Scaling.fit), new Table(n -> {
                             n.top();
                             n.table(Styles.black3, c -> {
                                 Label label = c.add(s.name()).style(Styles.outlineLabel).top().growX().maxWidth(200f - 8f)
-                                    .update(l -> l.setText((player.core() == null || !player.core().items.has(s.requirements()) ? "[#dd5656]" : "") + s.name())).get();
+                                    .update(l -> l.setText((!player.team().rules().infiniteResources && !state.rules.infiniteResources && player.core() != null && !player.core().items.has(s.requirements()) ? "[#dd5656]" : "") + s.name())).get();
                                 label.setEllipsis(true);
                                 label.setAlignment(Align.center);
                             }).growX().margin(1).pad(4).maxWidth(Scl.scl(200f - 8f)).padBottom(0);
@@ -220,10 +206,14 @@ public class SchematicsDialog extends BaseDialog{
                         if(state.isMenu()){
                             showInfo(s);
                         }else{
-                            control.input.useSchematic(s);
-                            hide();
+                            if(!(state.rules.schematicsAllowed || Core.settings.getBool("forceallowschematics"))){
+                                ui.showInfo("@schematic.disabled");
+                            }else{
+                                control.input.useSchematic(s);
+                                hide();
+                            }
                         }
-                    }).pad(4).style(Styles.cleari).get();
+                    }).pad(4).style(Styles.flati).get();
 
                     sel[0].getStyle().up = Tex.pane;
 
@@ -233,7 +223,11 @@ public class SchematicsDialog extends BaseDialog{
                 }
 
                 if(firstSchematic == null){
-                    t.add("@none");
+                    if(!searchString.isEmpty() || selectedTags.any()){
+                        t.add("@none.found");
+                    }else{
+                        t.add("@none").color(Color.lightGray);
+                    }
                 }
             };
 
@@ -248,11 +242,11 @@ public class SchematicsDialog extends BaseDialog{
     Interval timer = new Interval();
     String clipboard;
     public void showImport(){
-        BaseDialog dialog = new BaseDialog("@editor.export");
+        BaseDialog dialog = new BaseDialog("@editor.import");
         dialog.cont.pane(p -> {
             p.margin(10f);
             p.table(Tex.button, t -> {
-                TextButtonStyle style = Styles.cleart;
+                TextButtonStyle style = Styles.flatt;
                 t.defaults().size(280f, 60f).left();
                 t.row();
                 t.button("@schematic.copy.import", Icon.copy, style, () -> {
@@ -309,30 +303,77 @@ public class SchematicsDialog extends BaseDialog{
         dialog.cont.pane(p -> {
             p.margin(10f);
             p.table(Tex.button, t -> {
-                TextButtonStyle style = Styles.cleart;
+                TextButtonStyle style = Styles.flatt;
                 t.defaults().size(280f, 60f).left();
                 if(steam && !s.hasSteamID()){
                     t.button("@schematic.shareworkshop", Icon.book, style,
-                            () -> platform.publish(s)).marginLeft(12f);
+                        () -> platform.publish(s)).marginLeft(12f);
                     t.row();
                     dialog.hide();
                 }
                 t.button("@schematic.copy", Icon.copy, style, () -> {
                     dialog.hide();
                     ui.showInfoFade("@copied");
-                    Core.app.setClipboardText(schematics.writeBase64(s));
+                    Core.app.setClipboardText(schematics.writeBase64(s, Core.settings.getBool("schematicmenuexporttags")));
                 }).marginLeft(12f);
                 t.row();
                 t.button("@schematic.exportfile", Icon.export, style, () -> {
                     dialog.hide();
                     platform.export(s.name(), schematicExtension, file -> Schematics.write(s, file));
                 }).marginLeft(12f);
+                t.row();
+                t.button("@schematic.chatshare", Icon.bookOpen, style, () -> {
+                    if (!state.isPlaying()) return;
+                    dialog.hide();
+                    clientThread.post(() -> Main.INSTANCE.send(new SchematicTransmission(s), () -> Core.app.post(() ->
+                        ui.showInfoToast(Core.bundle.get("client.finisheduploading"), 2f)
+                    )));
+                }).marginLeft(12f).get().setDisabled(() -> !state.isPlaying());
             });
         });
 
         dialog.addCloseButton();
         dialog.show();
     }
+
+    public void showEdit(Schematic s){
+        new BaseDialog("@schematic.edit"){{
+            setFillParent(true);
+            addCloseListener();
+
+            cont.margin(30);
+
+            cont.add("@schematic.tags").padRight(6f);
+            cont.table(tags -> buildTags(s, tags, false)).maxWidth(400f).fillX().left().row();
+
+            cont.margin(30).add("@name").padRight(6f);
+            TextField nameField = cont.field(s.name(), null).size(400f, 55f).left().get();
+
+            cont.row();
+
+            cont.margin(30).add("@editor.description").padRight(6f);
+            TextField descField = cont.area(s.description(), Styles.areaField, t -> {}).size(400f, 140f).left().get();
+
+            Runnable accept = () -> {
+                s.tags.put("name", nameField.getText());
+                s.tags.put("description", descField.getText());
+                s.save();
+                hide();
+                rebuildPane.run();
+            };
+
+            buttons.defaults().size(210f, 64f).pad(4);
+            buttons.button("@ok", Icon.ok, accept).disabled(b -> nameField.getText().isEmpty());
+            buttons.button("@cancel", Icon.cancel, this::hide);
+
+            keyDown(KeyCode.enter, () -> {
+                if(!nameField.getText().isEmpty() && Core.scene.getKeyboardFocus() != descField){
+                    accept.run();
+                }
+            });
+        }}.show();
+    }
+
 
 
     //adds all new tags to the global list of tags
@@ -406,35 +447,51 @@ public class SchematicsDialog extends BaseDialog{
             cont.pane(t -> {
                 resized(true, () -> {
                     t.clearChildren();
-                    t.marginRight(19f);
+                    t.marginRight(19f).marginLeft(12f);
                     t.defaults().size(48f);
 
                     int cols = (int)Math.min(20, Core.graphics.getWidth() / Scl.scl(52f));
 
+                    int i = 0;
+                    for(String icon : PlanetDialog.defaultIcons){
+                        String out = (char)Iconc.codes.get(icon) + "";
+                        if(tags.contains(out)) continue;
+
+                        t.button(Icon.icons.get(icon), Styles.flati, iconMed, () -> {
+                            tags.add(out);
+                            tagsChanged();
+                            cons.get(out);
+                            hide();
+                        });
+
+                        if(++i % cols == 0) t.row();
+                    }
+
                     for(ContentType ctype : defaultContentIcons){
+                        var all = content.getBy(ctype).<UnlockableContent>as().select(u -> !u.isHidden() && u.unlockedNow() && u.hasEmoji());
+
                         t.row();
-                        t.image().colspan(cols).growX().width(Float.NEGATIVE_INFINITY).height(3f).color(Pal.accent);
+                        if(all.count(u -> !tags.contains(u.emoji())) > 0) t.image().colspan(cols).growX().width(Float.NEGATIVE_INFINITY).height(3f).color(Pal.accent);
                         t.row();
 
-                        int i = 0;
-                        for(UnlockableContent u : content.getBy(ctype).<UnlockableContent>as()){
-                            if(!u.isHidden() && u.unlockedNow() && u.hasEmoji() && !tags.contains(u.emoji())){
-                                t.button(new TextureRegionDrawable(u.uiIcon), Styles.cleari, iconMed, () -> {
-                                    String out = u.emoji() + "";
+                        i = 0;
+                        for(UnlockableContent u : all){
+                            if(tags.contains(u.emoji())) continue;
+                            t.button(new TextureRegionDrawable(u.uiIcon), Styles.flati, iconMed, () -> {
+                                String out = u.emoji() + "";
 
-                                    tags.add(out);
-                                    tagsChanged();
-                                    cons.get(out);
+                                tags.add(out);
+                                tagsChanged();
+                                cons.get(out);
 
-                                    hide();
-                                });
+                                hide();
+                            }).tooltip(u.localizedName);
 
-                                if(++i % cols == 0) t.row();
-                            }
+                            if(++i % cols == 0) t.row();
                         }
                     }
                 });
-            });
+            }).scrollX(false);
             buttons.button("@back", Icon.left, this::hide).size(210f, 64f);
         }}.show();
     }
@@ -446,66 +503,107 @@ public class SchematicsDialog extends BaseDialog{
         dialog.cont.pane(p -> {
             rebuild[0] = () -> {
                 p.clearChildren();
-                p.defaults().fillX().left();
+                p.margin(12f).defaults().fillX().left();
+
+                p.table(t -> {
+                    t.left().defaults().fillX().height(tagh).pad(2);
+                    t.button("@client.schematic.cleartags", Icon.refresh, selectedTags::clear).wrapLabel(false).get().getLabelCell().padLeft(5);
+                    t.button("@client.schematic.prunetags", Icon.trash, this::pruneTags).wrapLabel(false).get().getLabelCell().padLeft(5);
+                    t.button("@schematic.texttag", Icon.add, () -> showNewTag(res -> rebuild[0].run())).wrapLabel(false).get().getLabelCell().padLeft(5);
+                    t.button("@schematic.icontag", Icon.add, () -> showNewIconTag(res -> rebuild[0].run())).wrapLabel(false).get().getLabelCell().padLeft(5);
+                });
+                p.row();
 
                 float sum = 0f;
                 Table current = new Table().left();
 
                 for(var tag : tags){
 
-                    var next = new Table(Tex.button, n -> {
-                        n.add(tag).padRight(4);
+                    var next = new Table(n -> {
+                        n.table(Tex.pane, move -> {
+                            move.margin(2);
 
-                        n.add().growX();
-                        n.defaults().size(30f);
-
-                        //delete
-                        n.button(Icon.cancelSmall, Styles.emptyi, () -> {
-                            ui.showConfirm("@schematic.tagdelconfirm", () -> {
-                                for(Schematic s : schematics.all()){
-                                    if(s.labels.any()){
-                                        s.labels.remove(tag);
-                                        s.save();
+                            //move up
+                            move.button(Icon.upOpen, Styles.emptyi, () -> {
+                                int idx = tags.indexOf(tag);
+                                if(idx > 0){
+                                    if(Core.input.shift()){
+                                        tags.insert(0, tags.remove(idx));
+                                    } else {
+                                        tags.swap(idx, idx - 1);
                                     }
-                                }
-                                selectedTags.remove(tag);
-                                tags.remove(tag);
-                                tagsChanged();
-                                rebuildPane.run();
-                                rebuild[0].run();
-                            });
-                        });
-                        //rename
-                        n.button(Icon.pencilSmall, Styles.emptyi, () -> {
-                            ui.showTextInput("@schematic.renametag", "@name", tag, result -> {
-                                //same tag, nothing was renamed
-                                if(result.equals(tag)) return;
-
-                                if(tags.contains(result)){
-                                    ui.showInfo("@schematic.tagexists");
-                                }else{
-                                    for(Schematic s : schematics.all()){
-                                        if(s.labels.any()){
-                                            s.labels.replace(tag, result);
-                                            s.save();
-                                        }
-                                    }
-                                    selectedTags.replace(tag, result);
-                                    tags.replace(tag, result);
                                     tagsChanged();
                                     rebuild[0].run();
                                 }
+                            }).tooltip("@editor.moveup").row();
+                            //move down
+                            move.button(Icon.downOpen, Styles.emptyi, () -> {
+                                int idx = tags.indexOf(tag);
+                                if(idx < tags.size - 1){
+                                    if(Core.input.shift()){
+                                        tags.insert(tags.size - 1, tags.remove(idx));
+                                    } else {
+                                        tags.swap(idx, idx + 1);
+                                    }
+                                    tagsChanged();
+                                    rebuild[0].run();
+                                }
+                            }).tooltip("@editor.movedown");
+                        }).fillY().margin(6f);
+
+                        n.table(Tex.whiteui, t -> {
+                            t.setColor(Pal.gray);
+                            t.add(tag).left().row();
+                            final var count = schematics.all().count(s -> s.labels.contains(tag));
+                            t.add(Core.bundle.format("schematic.tagged", count)).left()
+                            .update(b -> b.setColor(b.hasMouse() ? Pal.accent : selectedTags.contains(tag) ? Color.lime : count == 0 ? Color.red : Color.lightGray))
+                            .get().clicked(() -> {
+                                if (!selectedTags.contains(tag)) selectedTags.add(tag);
+                                else selectedTags.remove(tag);
+                                rebuildTags.run();
+                                rebuildPane.run();
                             });
-                        });
-                        //move
-                        n.button(Icon.upSmall, Styles.emptyi, () -> {
-                            int idx = tags.indexOf(tag);
-                            if(idx > 0){
-                                tags.swap(idx, idx - 1);
-                                tagsChanged();
-                                rebuild[0].run();
-                            }
-                        });
+                        }).growX().fillY().margin(8f);
+
+                        n.table(Tex.pane, b -> {
+                            b.margin(2);
+
+                            //rename tag
+                            b.button(Icon.pencil, Styles.emptyi, () -> {
+                                ui.showTextInput("@schematic.renametag", "@name", tag, result -> {
+                                    //same tag, nothing was renamed
+                                    if(result.equals(tag)) return;
+
+                                    if(tags.contains(result)){
+                                        ui.showInfo("@schematic.tagexists");
+                                    }else{
+                                        for(Schematic s : schematics.all()){
+                                            if(s.labels.any()){
+                                                s.labels.replace(tag, result);
+                                                s.save();
+                                            }
+                                        }
+                                        selectedTags.replace(tag, result);
+                                        tags.replace(tag, result);
+                                        tagsChanged();
+                                        rebuild[0].run();
+                                    }
+                                });
+                            }).tooltip("@schematic.renametag").row();
+                            //delete tag
+                            b.button(Icon.trash, Styles.emptyi, () -> {
+                                if (Core.input.shift()) {
+                                    deleteTag(tag);
+                                    rebuild[0].run();
+                                    return;
+                                }
+
+                                ui.showConfirm("@schematic.tagdelconfirm", () -> {
+                                    deleteTag(tag);
+                                    rebuild[0].run();
+                                });
+                            }).tooltip("@save.delete");
+                        }).fillY().margin(6f);
                     });
 
                     next.pack();
@@ -515,10 +613,10 @@ public class SchematicsDialog extends BaseDialog{
                         p.add(current).row();
                         current = new Table();
                         current.left();
-                        current.add(next).height(tagh).pad(2);
+                        current.add(next).minWidth(240).pad(4);
                         sum = 0;
                     }else{
-                        current.add(next).height(tagh).pad(2);
+                        current.add(next).minWidth(240).pad(4);
                     }
 
                     sum += w;
@@ -527,19 +625,30 @@ public class SchematicsDialog extends BaseDialog{
                 if(sum > 0){
                     p.add(current).row();
                 }
-
-                p.table(t -> {
-                    t.left().defaults().fillX().height(tagh).pad(2);
-
-                    t.button("@schematic.texttag", Icon.add, () -> showNewTag(res -> rebuild[0].run())).wrapLabel(false).get().getLabelCell().padLeft(5);
-                    t.button("@schematic.icontag", Icon.add, () -> showNewIconTag(res -> rebuild[0].run())).wrapLabel(false).get().getLabelCell().padLeft(5);
-                });
-
             };
 
             resized(true, rebuild[0]);
-        });
+        }).scrollX(false);
         dialog.show();
+    }
+
+    public void pruneTags() {
+        selectedTags.clear();
+        tags.removeAll(t -> schematics.all().find(s -> s.labels.contains(t)) == null);
+        tagsChanged();
+    }
+
+    void deleteTag(String tag) {
+        for(Schematic s : schematics.all()){
+            if(s.labels.any()){
+                s.labels.remove(tag);
+                s.save();
+            }
+        }
+        selectedTags.remove(tag);
+        tags.remove(tag);
+        tagsChanged();
+        rebuildPane.run();
     }
 
     void buildTags(Schematic schem, Table t){
@@ -574,22 +683,26 @@ public class SchematicsDialog extends BaseDialog{
             dialog.addCloseButton();
             dialog.cont.pane(p -> resized(true, () -> {
                 p.clearChildren();
+                p.defaults().fillX().left();
 
                 float sum = 0f;
                 Table current = new Table().left();
                 for(var tag : tags){
-                    if(schem.labels.contains(tag)) continue;
 
-                    var next = Elem.newButton(tag, () -> {
-                        addTag(schem, tag);
+                    var next = new TextButton(tag, Styles.togglet);
+                    next.changed(() -> {
+                        if(schem.labels.contains(tag)){
+                            removeTag(schem, tag);
+                        } else {
+                            addTag(schem, tag);
+                        }
                         buildTags(schem, t, name);
-                        dialog.hide();
                     });
+                    next.setChecked(schem.labels.contains(tag));
                     next.getLabel().setWrap(false);
-
                     next.pack();
-                    float w = next.getPrefWidth() + Scl.scl(6f);
 
+                    float w = next.getPrefWidth() + Scl.scl(6f);
                     if(w + sum >= Core.graphics.getWidth() * (Core.graphics.isPortrait() ? 1f : 0.8f)){
                         p.add(current).row();
                         current = new Table();
@@ -645,6 +758,12 @@ public class SchematicsDialog extends BaseDialog{
         private Texture lastTexture;
         boolean set;
 
+        private static long previewTime;
+
+        static { // Reset the preview time every frame
+            Events.run(EventType.Trigger.update, () -> previewTime = 0);
+        }
+
         public SchematicImage(Schematic s){
             super(Tex.clear);
             setScaling(Scaling.fit);
@@ -693,7 +812,16 @@ public class SchematicsDialog extends BaseDialog{
         }
 
         private void setPreview(){
+            var maxTime = Core.settings.getInt("schemloadtime");
+            if(maxTime > 0 && previewTime > Time.millisToNanos(maxTime) && !schematics.hasPreview(schematic)){ // Only allow 10ms of expensive preview creation each frame. Yes this is janky. No I don't care
+                set = false;
+                return;
+            }
+            var start = Time.nanos();
             TextureRegionDrawable draw = new TextureRegionDrawable(new TextureRegion(lastTexture = schematics.getPreview(schematic)));
+            var time = Time.timeSinceNanos(start);
+            if(time > Time.millisToNanos(50)) Log.debug("Schematic @ (@x@) took @ms to load", schematic.name(), schematic.width, schematic.height, time/(float)Time.nanosPerMilli);
+            previewTime += time;
             setDrawable(draw);
             setScaling(Scaling.fit);
         }
@@ -704,19 +832,16 @@ public class SchematicsDialog extends BaseDialog{
         SchematicInfoDialog(){
             super("");
             setFillParent(true);
-            addCloseButton();
+            addCloseListener();
         }
 
         public void show(Schematic schem){
             cont.clear();
             title.setText("[[" + Core.bundle.get("schematic") + "] " +schem.name());
 
-            cont.add(Core.bundle.format("schematic.info", schem.width, schem.height, schem.tiles.size)).color(Color.lightGray);
-            cont.row();
+            cont.add(Core.bundle.format("schematic.info", schem.width, schem.height, schem.tiles.size)).color(Color.lightGray).row();
             cont.table(tags -> buildTags(schem, tags)).fillX().left().row();
-            cont.row();
-            cont.add(new SchematicImage(schem)).maxSize(800f);
-            cont.row();
+            cont.add(new SchematicImage(schem)).maxSize(800f).row();
 
             ItemSeq arr = schem.requirements();
             cont.table(r -> {
@@ -725,7 +850,7 @@ public class SchematicsDialog extends BaseDialog{
                     r.image(s.item.uiIcon).left().size(iconMed);
                     r.label(() -> {
                         Building core = player.core();
-                        if(core == null || state.rules.infiniteResources || core.items.has(s.item, s.amount)) return "[lightgray]" + s.amount + "";
+                        if(core == null || state.isMenu() || state.rules.infiniteResources || core.items.has(s.item, s.amount)) return "[lightgray]" + s.amount + "";
                         return (core.items.has(s.item, s.amount) ? "[lightgray]" : "[scarlet]") + Math.min(core.items.get(s.item), s.amount) + "[lightgray]/" + s.amount;
                     }).padLeft(2).left().padRight(4);
 
@@ -754,6 +879,12 @@ public class SchematicsDialog extends BaseDialog{
                     }
                 });
             }
+
+            buttons.clearChildren();
+            buttons.defaults().size(Core.graphics.isPortrait() ? 150f : 210f, 64f);
+            buttons.button("@back", Icon.left, this::hide);
+            buttons.button("@editor.export", Icon.upload, () -> showExport(schem));
+            buttons.button("@edit", Icon.edit, () -> showEdit(schem));
 
             show();
         }

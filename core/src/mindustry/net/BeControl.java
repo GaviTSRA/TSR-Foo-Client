@@ -3,10 +3,9 @@ package mindustry.net;
 import arc.*;
 import arc.files.*;
 import arc.func.*;
-import arc.struct.*;
 import arc.util.*;
-import arc.util.async.*;
 import arc.util.serialization.*;
+import mindustry.client.utils.*;
 import mindustry.core.*;
 import mindustry.game.*;
 import mindustry.gen.*;
@@ -26,9 +25,8 @@ import static mindustry.Vars.*;
 public class BeControl{
     private static final int updateInterval = 120; // Poll every 120s (30/hr), this leaves us with 30 requests per hour to spare.
 
-    private final AsyncExecutor executor = new AsyncExecutor(1);
     /** Whether or not to automatically display an update prompt on client load and every couple of minutes. */
-    public boolean checkUpdates = Core.settings.getBool("autoupdate");
+    public boolean checkUpdates;
     private boolean updateAvailable;
     private String updateUrl;
     private String updateBuild;
@@ -40,6 +38,7 @@ public class BeControl{
 
     public BeControl(){
         Events.on(EventType.ClientLoadEvent.class, event -> {
+            checkUpdates = Core.settings.getBool("autoupdate");
             Timer.schedule(() -> {
                     if(checkUpdates && !mobile){ // Don't auto update on manually cloned copies of the repo
                         checkUpdate(result -> {
@@ -72,14 +71,14 @@ public class BeControl{
     /** asynchronously checks for updates. */
     public void checkUpdate(Boolc done, String repo){
         Http.get("https://api.github.com/repos/" + repo + "/releases/latest")
-            .error(e -> {
-                ui.loadfrag.hide();
-                Log.err(e);
-            })
+            .error(e -> Core.app.post(() -> {
+                done.get(false);
+                Log.err("Failed to check for updates", e);
+            }))
             .submit(res -> {
                 Jval val = Jval.read(res.getResultAsString());
-                String newBuild = val.getString("tag_name", "0");
-                if(!Version.clientVersion.startsWith(newBuild)){
+                String newBuild = val.getString("name");
+                if(!newBuild.trim().isEmpty() && !Version.clientVersion.equals(newBuild)){
                     Jval asset = val.get("assets").asArray().find(v -> v.getString("name", "").toLowerCase().contains("desktop"));
                     if (asset == null) asset = val.get("assets").asArray().find(v -> v.getString("name", "").toLowerCase().contains("mindustry"));
                     if (asset == null) {
@@ -126,24 +125,24 @@ public class BeControl{
                     Fi dest = source.sibling("server-be-" + updateBuild + ".jar");
 
                     download(updateUrl, dest,
-                        len -> Core.app.post(() -> Log.info("&ly| Size: @ MB.", Strings.fixed((float)len / 1024 / 1024, 2))),
-                        progress -> {},
-                        () -> false,
-                        () -> Core.app.post(() -> {
-                            Log.info("&lcSaving...");
-                            SaveIO.save(saveDirectory.child("autosavebe." + saveExtension));
-                            Log.info("&lcAutosaved.");
+                    len -> Core.app.post(() -> Log.info("&ly| Size: @ MB.", Strings.fixed((float)len / 1024 / 1024, 2))),
+                    progress -> {},
+                    () -> false,
+                    () -> Core.app.post(() -> {
+                        Log.info("&lcSaving...");
+                        SaveIO.save(saveDirectory.child("autosavebe." + saveExtension));
+                        Log.info("&lcAutosaved.");
 
-                            netServer.kickAll(KickReason.serverRestarting);
-                            Threads.sleep(32);
+                        netServer.kickAll(KickReason.serverRestarting);
+                        Threads.sleep(500);
 
-                            Log.info("&lcVersion downloaded, exiting. Note that if you are not using a auto-restart script, the server will not restart automatically.");
-                            //replace old file with new
-                            dest.copyTo(source);
-                            dest.delete();
-                            System.exit(2); //this will cause a restart if using the script
-                        }),
-                        Throwable::printStackTrace);
+                        Log.info("&lcVersion downloaded, exiting. Note that if you are not using a auto-restart script, the server will not restart automatically.");
+                        //replace old file with new
+                        dest.copyTo(source);
+                        dest.delete();
+                        System.exit(2); //this will cause a restart if using the script
+                    }),
+                    Throwable::printStackTrace);
                 }catch(Exception e){
                     e.printStackTrace();
                 }
@@ -153,7 +152,7 @@ public class BeControl{
     }
 
     private void download(String furl, Fi dest, Intc length, Floatc progressor, Boolp canceled, Runnable done, Cons<Throwable> error){
-        executor.submit(() -> {
+        mainExecutor.submit(() -> {
             try{
                 HttpURLConnection con = (HttpURLConnection)new URL(furl).openConnection();
                 BufferedInputStream in = new BufferedInputStream(con.getInputStream());
@@ -195,19 +194,8 @@ public class BeControl{
 
             BaseDialog dialog = new BaseDialog("@be.updating");
             download(updateUrl, file, i -> length[0] = i, v -> progress[0] = v, () -> cancel[0], () -> {
-                try{
-                    Log.info(file.absolutePath());
-                    Seq<String> args = Seq.with(javaPath);
-                    args.addAll(System.getProperties().entrySet().stream().map(it -> "-D" + it).toArray(String[]::new));
-                    if(OS.isMac) args.add("-XstartOnFirstThread");
-                    args.addAll("-Dberestart", "-Dbecopy=" + fileDest.absolutePath(), "-jar", file.absolutePath(), "-firstThread");
-                    Runtime.getRuntime().exec(args.toArray());
-                    Core.app.exit();
-                }catch(IOException e){
-                    dialog.cont.clearChildren();
-                    dialog.cont.add("It seems that you don't have java installed, please click the button below then click the \"latest release\" button on the website.").row();
-                    dialog.cont.button("Install Java", () -> Core.app.openURI("https://adoptium.net/index.html?variant=openjdk16&jvmVariant=hotspot")).size(210f, 64f);
-                }
+                Log.info(file.absolutePath());
+                ClientUtils.openJar("-Dberestart", "-Dbecopy=" + fileDest.absolutePath(), "-jar", file.absolutePath());
             }, e -> {
                 dialog.hide();
                 ui.showException(e);

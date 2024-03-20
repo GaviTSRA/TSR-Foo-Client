@@ -6,12 +6,14 @@ import arc.math.*;
 import arc.util.*;
 import arc.util.io.*;
 import mindustry.annotations.Annotations.*;
+import mindustry.client.utils.*;
 import mindustry.content.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.logic.*;
 import mindustry.ui.*;
 import mindustry.world.*;
+import mindustry.world.consumers.*;
 import mindustry.world.meta.*;
 
 import static mindustry.Vars.*;
@@ -24,6 +26,7 @@ public class MendProjector extends Block{
     public float reload = 250f;
     public float range = 60f;
     public float healPercent = 12f;
+    public transient float healAmount = 50f; // Used only for flood
     public float phaseBoost = 12f;
     public float phaseRangeBoost = 50f;
     public float useTime = 400f;
@@ -37,6 +40,7 @@ public class MendProjector extends Block{
         hasItems = true;
         emitLight = true;
         lightRadius = 50f;
+        suppressable = true;
         envEnabled |= Env.space;
     }
 
@@ -53,8 +57,14 @@ public class MendProjector extends Block{
         stats.add(Stat.repairTime, (int)(100f / healPercent * reload / 60f), StatUnit.seconds);
         stats.add(Stat.range, range / tilesize, StatUnit.blocks);
 
-        stats.add(Stat.boostEffect, phaseRangeBoost / tilesize, StatUnit.blocks);
-        stats.add(Stat.boostEffect, (phaseBoost + healPercent) / healPercent, StatUnit.timesSpeed);
+        if(findConsumer(c -> c instanceof ConsumeItems) instanceof ConsumeItems cons){
+            stats.remove(Stat.booster);
+            stats.add(Stat.booster, StatValues.itemBoosters(
+                "{0}" + StatUnit.timesSpeed.localized(),
+                stats.timePeriod, (phaseBoost + healPercent) / healPercent, phaseRangeBoost,
+                cons.items, this::consumesItem)
+            );
+        }
     }
 
     @Override
@@ -70,14 +80,11 @@ public class MendProjector extends Block{
     public void setBars(){
         super.setBars();
 
-        bars.add("progress", (MendBuild entity) -> new Bar("bar.progress", Pal.heal, () -> entity.charge / reload));
+        addBar("progress", (MendBuild entity) -> new Bar("bar.progress", Pal.heal, () -> entity.charge / reload));
     }
 
     public class MendBuild extends Building implements Ranged{
-        float heat;
-        float charge = Mathf.random(reload);
-        float phaseHeat;
-        float smoothEfficiency;
+        public float heat, charge = Mathf.random(reload), phaseHeat, smoothEfficiency;
 
         @Override
         public float range(){
@@ -86,23 +93,28 @@ public class MendProjector extends Block{
 
         @Override
         public void updateTile(){
-            smoothEfficiency = Mathf.lerpDelta(smoothEfficiency, efficiency(), 0.08f);
-            heat = Mathf.lerpDelta(heat, consValid() || cheating() ? 1f : 0f, 0.08f);
+            boolean canHeal = !checkSuppression();
+
+            smoothEfficiency = Mathf.lerpDelta(smoothEfficiency, efficiency, 0.08f);
+            heat = Mathf.lerpDelta(heat, efficiency > 0 && canHeal ? 1f : 0f, 0.08f);
             charge += heat * delta();
 
-            phaseHeat = Mathf.lerpDelta(phaseHeat, Mathf.num(cons.optionalValid()), 0.1f);
+            phaseHeat = Mathf.lerpDelta(phaseHeat, optionalEfficiency, 0.1f);
 
-            if(cons.optionalValid() && timer(timerUse, useTime) && efficiency() > 0){
+            if(optionalEfficiency > 0 && timer(timerUse, useTime) && canHeal){
                 consume();
             }
 
-            if(charge >= reload){
+            if(charge >= reload && canHeal){
                 float realRange = range + phaseHeat * phaseRangeBoost;
                 charge = 0f;
 
-                indexer.eachBlock(this, realRange, Building::damaged, other -> {
-                    other.heal(other.maxHealth() * (healPercent + phaseHeat * phaseBoost) / 100f * efficiency());
-                    Fx.healBlockFull.at(other.x, other.y, other.block.size, baseColor);
+                var flood = CustomMode.flood.b();
+                indexer.eachBlock(this, realRange, b -> b.damaged() && !b.isHealSuppressed(), other -> {
+                    if (flood) other.heal((healAmount + phaseHeat * phaseBoost) * efficiency);
+                    else other.heal(other.maxHealth() * (healPercent + phaseHeat * phaseBoost) / 100f * efficiency);
+                    other.recentlyHealed();
+                    Fx.healBlockFull.at(other.x, other.y, other.block.size, baseColor, other.block);
                 });
             }
         }
@@ -140,7 +152,7 @@ public class MendProjector extends Block{
 
         @Override
         public void drawLight(){
-            Drawf.light(team, x, y, lightRadius * smoothEfficiency, baseColor, 0.7f * smoothEfficiency);
+            Drawf.light(x, y, lightRadius * smoothEfficiency, baseColor, 0.7f * smoothEfficiency);
         }
 
         @Override

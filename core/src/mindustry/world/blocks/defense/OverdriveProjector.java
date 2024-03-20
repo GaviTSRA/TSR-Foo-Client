@@ -15,6 +15,7 @@ import mindustry.graphics.*;
 import mindustry.logic.*;
 import mindustry.ui.*;
 import mindustry.world.*;
+import mindustry.world.consumers.*;
 import mindustry.world.meta.*;
 
 import static arc.Core.*;
@@ -62,7 +63,7 @@ public class OverdriveProjector extends Block{
     }
 
     @Override
-    public void drawRequestConfigTop(BuildPlan req, Eachable<BuildPlan> list){
+    public void drawPlanConfigTop(BuildPlan req, Eachable<BuildPlan> list){
         if (!settings.getBool("showdomes") || !req.worldContext) return;
         Drawf.dashCircle(req.drawx(), req.drawy(), range, baseColor);
         indexer.eachBlock(player.team(), req.drawx(), req.drawy(), range, other -> other.block.canOverdrive, other -> Drawf.selected(other, Tmp.c1.set(baseColor).a(Mathf.absin(4f, 1f))));
@@ -77,23 +78,20 @@ public class OverdriveProjector extends Block{
         stats.add(Stat.range, range / tilesize, StatUnit.blocks);
         stats.add(Stat.productionTime, useTime / 60f, StatUnit.seconds);
 
-        if(hasBoost){
-            stats.add(Stat.boostEffect, (range + phaseRangeBoost) / tilesize, StatUnit.blocks);
-            stats.add(Stat.boostEffect, "+" + (int)((speedBoost + speedBoostPhase) * 100f - 100) + "%");
+        if(hasBoost && findConsumer(f -> f instanceof ConsumeItems) instanceof ConsumeItems items){
+            stats.remove(Stat.booster);
+            stats.add(Stat.booster, StatValues.itemBoosters("+{0}%", stats.timePeriod, speedBoostPhase * 100f, phaseRangeBoost, items.items, this::consumesItem));
         }
     }
     
     @Override
     public void setBars(){
         super.setBars();
-        bars.add("boost", (OverdriveBuild entity) -> new Bar(() -> Core.bundle.format("bar.boost", Mathf.round(Math.max((entity.realBoost() * 100 - 100), 0))), () -> Pal.accent, () -> entity.realBoost() / (hasBoost ? speedBoost + speedBoostPhase : speedBoost)));
+        addBar("boost", (OverdriveBuild entity) -> new Bar(() -> Core.bundle.format("bar.boost", Mathf.round(Math.max((entity.realBoost() * 100 - 100), 0))), () -> Pal.accent, () -> entity.realBoost() / (hasBoost ? speedBoost + speedBoostPhase : speedBoost)));
     }
 
     public class OverdriveBuild extends Building implements Ranged{
-        float heat;
-        float charge = Mathf.random(reload);
-        float phaseHeat;
-        float smoothEfficiency;
+        public float heat, charge = Mathf.random(reload), phaseHeat, smoothEfficiency;
 
         @Override
         public void add() {
@@ -118,17 +116,17 @@ public class OverdriveProjector extends Block{
 
         @Override
         public void drawLight(){
-            Drawf.light(team, x, y, lightRadius * smoothEfficiency, baseColor, 0.7f * smoothEfficiency);
+            Drawf.light(x, y, lightRadius * smoothEfficiency, baseColor, 0.7f * smoothEfficiency);
         }
 
         @Override
         public void updateTile(){
-            smoothEfficiency = Mathf.lerpDelta(smoothEfficiency, efficiency(), 0.08f);
-            heat = Mathf.lerpDelta(heat, consValid() ? 1f : 0f, 0.08f);
+            smoothEfficiency = Mathf.lerpDelta(smoothEfficiency, efficiency, 0.08f);
+            heat = Mathf.lerpDelta(heat, efficiency > 0 ? 1f : 0f, 0.08f);
             charge += heat * Time.delta;
 
             if(hasBoost){
-                phaseHeat = Mathf.lerpDelta(phaseHeat, Mathf.num(cons.optionalValid()), 0.1f);
+                phaseHeat = Mathf.lerpDelta(phaseHeat, optionalEfficiency, 0.1f);
             }
 
             if(charge >= reload){
@@ -138,13 +136,13 @@ public class OverdriveProjector extends Block{
                 indexer.eachBlock(this, realRange, other -> other.block.canOverdrive, other -> other.applyBoost(realBoost(), reload + 1f));
             }
 
-            if(timer(timerUse, useTime) && efficiency() > 0 && consValid()){
+            if(timer(timerUse, useTime) && efficiency > 0){
                 consume();
             }
         }
 
         public float realBoost(){
-            return consValid() ? (speedBoost + phaseHeat * speedBoostPhase) * efficiency() : 0f;
+            return (speedBoost + phaseHeat * speedBoostPhase) * efficiency;
         }
 
         @Override

@@ -1,20 +1,14 @@
-![Logo](core/assets-raw/sprites/ui/foo.png)
+![Logo](foo.png)
 
-This is my fork of Foo's Client, which is a fork from the game.  
-I want to add improvements on top of Foo's Client, since I like it.
-
-[![Release Update](../../workflows/Release%20Update/badge.svg)](https://gavitsra.github.io/TSR-Foo-Client)
-[![Discord](https://img.shields.io/discord/818951190721200158.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yp9ZW7j)
+[![Release Update](../../workflows/Release%20Update/badge.svg)](https://mindustry-antigrief.github.io/mindustry-client)
+[![Tests (Unstable)](../../workflows/Java%20Tests/badge.svg?branch=v7)](https://mindustry-antigrief.github.io/mindustry-client-v7-builds)
+[![Discord](https://img.shields.io/discord/741710208501547161.svg?logo=discord&logoColor=white&logoWidth=20&labelColor=7289DA&label=Discord&color=17cf48)](https://discord.gg/yp9ZW7j)
 
 # Installer
-Foo: Install `mindustry-antigrief/client-installer` through the mod browser in the vanilla game and allow the game to restart, upon restarting you will be prompted with an install popup, choose a version and it will install itself.  
-TSR-Foo: Soon  
-
-# INSTALL METHODS ARE OUTDATED
+Install `mindustry-antigrief/client-installer` through the mod browser in the vanilla game and allow the game to restart, upon restarting you will be prompted with an install popup, choose a version and it will install itself.
 
 ## [Changelog](./core/assets/changelog)
-### Running The Jar On Mac
-For whatever reason, MacOS refuses to be normal. Running the jar is slightly harder, open terminal and type `java -XstartOnFirstThread -jar <jar>` where `<jar>` is the path to the jar file (just click and drag the file in).
+## [Development/Unstable Builds](../../../mindustry-client-v7-builds)
 ## Steam
 ### Windows
 There are 3 methods to install the client on steam for windows.
@@ -67,6 +61,17 @@ _Sprite Packing:_ `./gradlew tools:pack`
 ### Server
 
 The client doesn't work as a server believe it or not.
+
+### Android
+
+1. Install the Android SDK [here.](https://developer.android.com/studio#command-tools) Make sure you're downloading the "Command line tools only", as Android Studio is not required.
+2. In the unzipped Android SDK folder, find the cmdline-tools directory. Then create a folder inside of it called `latest` and put all of its contents into the newly created folder.
+3. In the same directory run the command `sdkmanager --licenses` (or `./sdkmanager --licenses` if on linux/mac)
+4. Set the `ANDROID_HOME` environment variable to point to your unzipped Android SDK directory.
+5. Enable developer mode on your device/emulator. If you are on testing on a phone you can follow [these instructions](https://developer.android.com/studio/command-line/adb#Enabling), otherwise you need to google how to enable your emulator's developer mode specifically.
+6. Run `gradlew android:assembleDebug` (or `./gradlew` if on linux/mac). This will create an unsigned APK in `android/build/outputs/apk`.
+
+To debug the application on a connected device/emulator, run `gradlew android:installDebug android:run`.
 
 ### Troubleshooting
 

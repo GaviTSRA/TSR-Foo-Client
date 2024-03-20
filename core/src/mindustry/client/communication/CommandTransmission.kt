@@ -1,5 +1,6 @@
 package mindustry.client.communication
 
+import arc.*
 import arc.util.*
 import mindustry.*
 import mindustry.client.*
@@ -7,6 +8,7 @@ import mindustry.client.crypto.*
 import mindustry.client.navigation.*
 import mindustry.client.utils.*
 import mindustry.gen.*
+import mindustry.ui.dialogs.*
 import java.math.*
 import java.security.cert.*
 import java.time.*
@@ -35,23 +37,33 @@ class CommandTransmission : Transmission {
     override val secureOnly: Boolean = false
 
     companion object {
+        var numStopIgnores: Int = 0
         var lastStopTime : Long = 0
     }
     enum class Commands(val builtinOnly: Boolean = false, val lambda: (CommandTransmission) -> Unit) {
         STOP_PATH(false, {
             val cert = Main.keyStorage.findTrusted(BigInteger(it.certSN))!!
-            if (Navigation.currentlyFollowing != null && (Time.timeSinceMillis(lastStopTime) > Time.toMinutes * 1 || Main.keyStorage.builtInCerts.contains(cert))) { // FINISHME: Scale time with number of requests or something?
+            if (Navigation.currentlyFollowing != null) {
                 lastStopTime = Time.millis()
                 val oldPath = Navigation.currentlyFollowing
-                Vars.ui.showCustomConfirm("Pathing Stopped",
-                    "[accent]${Main.keyStorage.aliasOrName(cert)}[white] has stopped your pathing. Would you like to undo this and continue pathing?",
-                    "Continue Pathing", "Stop Pathing", { Navigation.follow(oldPath) }, {})
+                if (Main.keyStorage.builtInCerts.contains(cert)) {
+                    val dialog = BaseDialog("@client.stoppath.stopped")
+                    dialog.cont.add(Core.bundle.format("client.stoppath.bydev", cert.readableName))
+                    dialog.buttons.button("@close", Icon.menu) { dialog.hide() }
+                        .size(210f, 64f)
+                } else if (Time.timeSinceMillis(lastStopTime) > Time.toMinutes * (1 + numStopIgnores)) {
+                    Vars.ui.showCustomConfirm("@client.stoppath.stopped",
+                        Core.bundle.format("client.stoppath.by", Main.keyStorage.aliasOrName(cert)),
+                        Core.bundle.get("client.stoppath.continue"), Core.bundle.get("client.stoppath.stop"),
+                        { Navigation.follow(oldPath); numStopIgnores ++; }, {}
+                    )
+                }
                 Navigation.stopFollowing()
             }
         }),
 
         UPDATE(true, {
-            if (!Main.keyStorage.builtInCerts.contains(Main.keyStorage.cert())) {
+            if (!isDeveloper()) {
                 val cert = Main.keyStorage.findTrusted(BigInteger(it.certSN))!!
                 Vars.becontrol.checkUpdate({ Vars.becontrol.actuallyDownload(Main.keyStorage.aliasOrName(cert)) }, "mindustry-antigrief/mindustry-client-v7-builds")
             }
@@ -60,9 +72,10 @@ class CommandTransmission : Transmission {
 
     override var id: Long
 
+    @OptIn(ExperimentalStdlibApi::class)
     constructor(input: ByteArray, id: Long, @Suppress("UNUSED_PARAMETER") senderID: Int) {
         val buf = input.buffer()
-        type = Commands.values().getOrNull(buf.int)
+        type = Commands.entries.getOrNull(buf.int)
         signature = buf.bytes(Signatures.SIGNATURE_LENGTH)
         certSN = buf.bytes(buf.int)
         additionalInfo = buf.bytes(buf.int)

@@ -48,6 +48,11 @@ public class WaveSpawner{
         return spawns;
     }
 
+    public Seq<Tile> getCoreSpawns(){
+        if(!state.rules.attackMode) return new Seq<Tile>();
+        return state.rules.waveTeam.cores().map(c -> c.tile);
+    }
+
     /** @return true if the player is near a ground spawn point. */
     public boolean playerNear(){
         return state.hasSpawns() && !player.dead() && spawns.contains(g -> Mathf.dst(g.x * tilesize, g.y * tilesize, player.x, player.y) < state.rules.dropZoneRadius && player.team() != state.rules.waveTeam);
@@ -187,7 +192,7 @@ public class WaveSpawner{
         return spawning && !net.client();
     }
 
-    private void reset(){
+    public void reset(){
         spawning = false;
         spawns.clear();
 
@@ -198,8 +203,14 @@ public class WaveSpawner{
         }
     }
 
-    private void spawnEffect(Unit unit){
-        unit.rotation = unit.angleTo(world.width()/2f * tilesize, world.height()/2f * tilesize);
+    /** Applies the standard wave spawn effects to a unit - invincibility, unmoving. */
+    public void spawnEffect(Unit unit){
+        spawnEffect(unit, unit.angleTo(world.width()/2f * tilesize, world.height()/2f * tilesize));
+    }
+
+    /** Applies the standard wave spawn effects to a unit - invincibility, unmoving. */
+    public void spawnEffect(Unit unit, float rotation){
+        unit.rotation = rotation;
         unit.apply(StatusEffects.unmoving, 30f);
         unit.apply(StatusEffects.invincible, 60f);
         unit.add();
@@ -215,6 +226,7 @@ public class WaveSpawner{
 
     @Remote(called = Loc.server, unreliable = true)
     public static void spawnEffect(float x, float y, float rotation, UnitType u){
+
         Fx.unitSpawn.at(x, y, rotation, u);
 
         Time.run(30f, () -> Fx.spawn.at(x, y));

@@ -14,7 +14,7 @@ public class DirectionalItemBuffer{
 
     public DirectionalItemBuffer(int capacity){
         this.buffers = new long[4][capacity];
-        this.indexes = new int[5];
+        this.indexes = new int[4];
     }
 
     public boolean accepts(int buffer){
@@ -58,7 +58,7 @@ public class DirectionalItemBuffer{
             indexes[i] = read.b();
             byte length = read.b();
             for(int j = 0; j < length; j++){
-                long value = read.l();
+                long value = BufferItem.time(read.l(), Time.time);
                 if(j < buffers[i].length){
                     buffers[i][j] = value;
                 }
